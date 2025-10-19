@@ -50,3 +50,33 @@ def vpx_dilate(image, kernel=None, iterations=1):
 
         img = output
     return img * 255 
+
+def vpx_open(image, kernel=None, iterations=1):
+    """
+    Apertura binaria personalizada: erosión seguida de dilatación.
+    """
+    eroded = vpx_erode(image, kernel, iterations)
+    opened = vpx_dilate(eroded, kernel, iterations)
+
+    return opened
+
+def vpx_close(image, kernel=None, iterations=1):
+    """
+    Cierre binario personalizado: dilatación seguida de erosión.
+    """
+
+    dilated = vpx_dilate(image, kernel, iterations)
+    closed = vpx_erode(dilated, kernel, iterations)
+
+    return closed
+
+def vpx_gradient(image, kernel=None, iterations=1):
+    """
+    Gradiente morfológico personalizado: dilatación menos erosión.
+    """
+    dilated = vpx_dilate(image, kernel, iterations)
+    eroded = vpx_erode(image, kernel, iterations)
+
+    gradient = (dilated.astype(np.int16) - eroded.astype(np.int16)).clip(min=0).astype(np.uint8)
+
+    return gradient
