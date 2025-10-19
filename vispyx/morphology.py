@@ -6,7 +6,7 @@ def vpx_pad_image(image, kernel):
     """
     kh, kw = kernel.shape
     ph, pw = kh // 2, kw // 2
-    return np.pad(image, ((ph, ph), (pw,pw)), mode='constant', constant_values=0)
+    return np.pad(image, ((ph, ph), (pw,pw)), mode='reflect')
 
 def vpx_erode(image, kernel=None, iterations=1):
     """
