@@ -10,6 +10,7 @@ import time
 from vispyx.preprocessing import apply_clahe
 from vispyx.segmentation import segment_otsu
 from vispyx.morphology import vpx_erode, vpx_dilate
+from morph_scipy import MorphologicalProcessor
 
 
 def show_image(image, title='Resultado'):
@@ -64,9 +65,37 @@ def run_vpx_dilate(image_path, kernel_size=3, iterations=1):
     show_image(result, title=f'vpx_dilate (k={kernel_size}, i={iterations})')
     return result    
 
+def run_compare_scipy(method, image_path, kernel_size, iterations):
+    img = cv2.imread(image_path, 0)
+    processor = MorphologicalProcessor(kernel_size=kernel_size, iterations=iterations)
+
+    start = time.time()
+
+    if method == "erode":
+        result = processor.erode(img)
+    elif method == "dilate":
+        result = processor.dilate(img)
+    elif method == "open":
+        result = processor.open(img)
+    elif method == "close":
+        result = processor.close(img)
+    elif method == "gradient":
+        result = processor.gradient(img)
+    else:
+        raise ValueError(f"Método no reconocido: {method}")
+
+    end = time.time()
+    print(f"Tiempo de procesamiento con scipy.ndimage: {end - start:.4f} segundos")
+
+    show_image(result, title=f"[scipy] {method}")
+
 def main():
     parser = argparse.ArgumentParser(description="CLI de procesamiento de imágenes con vispyx")
-    parser.add_argument("method", choices=["clahe", "otsu", "vpx_erode","vpx_dilate"], help="Método de procesamiento")
+    parser.add_argument("method", choices=[
+        "clahe", "otsu", 
+        "vpx_erode", "vpx_dilate", 
+        "erode", "dilate", "open", "close", "gradient"
+    ], help="Método de procesamiento")
     parser.add_argument("image_path", help="Ruta de la imagen a procesar")
     parser.add_argument("--output", "-o", help="Ruta para guardar imagen procesada (opcional)", default=None)
     parser.add_argument("--kernel-size", type=int, default=3, help="Tamaño del kernel")
@@ -74,6 +103,7 @@ def main():
 
     args = parser.parse_args()
 
+    # Elegir función según método
     if args.method == "clahe":
         result = run_clahe(args.image_path)
     elif args.method == "otsu":
@@ -82,11 +112,15 @@ def main():
         result = run_vpx_erode(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations)
     elif args.method == "vpx_dilate":
         result = run_vpx_dilate(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations)
+    elif args.method in ["erode", "dilate", "open", "close", "gradient"]:
+        result = run_compare_scipy(args.method, args.image_path, args.kernel_size, args.iterations)
+    else:
+        raise ValueError(f"Método no reconocido: {args.method}")
 
-
+    # Guardar si se solicita
     if args.output:
         os.makedirs(os.path.dirname(args.output), exist_ok=True)
         cv2.imwrite(args.output, result)
-        print(f"Imagen guardada en {args.output}")
+        print(f"Imagen guardada en: {args.output}")
     else:
         print("Imagen procesada y mostrada. No se guardó.")
