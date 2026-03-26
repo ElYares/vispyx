@@ -1,0 +1,45 @@
+# Python cache and artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# Build artifacts
+dist/
+build/
+
+# Virtual env and local env files
+.env
+.venv/
+venv/
+
+# Notebooks and local editor files
+.ipynb_checkpoints/
+.vscode/
+
+# Project-generated outputs
+outputs/
+
+# Large/local datasets and docs (requested)
+archive/
+docs/
+
+# Images and scan files (requested)
+*.pgm
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.tif
+*.tiff
+*.gif
+*.h5
+
+# Allow the README cover image tracked in assets/
+!assets/
+!assets/vispyx.png
+
+# OS files
+.DS_Store
