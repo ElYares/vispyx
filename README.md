@@ -8,48 +8,28 @@
   Technical image processing with a morphology core implemented from scratch.
 </p>
 
-`vispyx` es un paquete de procesamiento de imágenes en Python, orientado a flujos de trabajo técnicos (médico, industrial y científico), con énfasis en **morfología implementada desde cero**.
+`vispyx` es un paquete Python de procesamiento de imágenes orientado a flujos técnicos y científicos, con un núcleo de **morfología matemática implementada desde cero**.
 
-## Características
+## Overview
 
-- Preprocesamiento de contraste con `CLAHE`
-- Segmentación binaria con umbral de `Otsu`
-- Morfología binaria implementada desde cero (`vpx_*`):
-  - `vpx_erode`
-  - `vpx_dilate`
-  - `vpx_open`
-  - `vpx_close`
-  - `vpx_gradient`
-  - `vpx_tophat`
-  - `vpx_blackhat`
-  - `vpx_boundary`
-  - `vpx_hitmiss`
-- Morfología en escala de grises (`gray_*`):
-  - `gray_erode`
-  - `gray_dilate`
-  - `gray_open`
-  - `gray_close`
-- Generadores formales de kernels:
-  - `kernel_square`
-  - `kernel_cross`
-  - `kernel_diamond`
-  - `kernel_disk`
-- CLI para ejecutar pipelines sin escribir código
-- API pública limpia desde `vispyx`
+`vispyx` actualmente cubre:
+
+- preprocesamiento con `CLAHE`
+- segmentación binaria con `Otsu`
+- morfología binaria `vpx_*`
+- morfología grayscale `gray_*`
+- kernels estructurantes reutilizables
+- CLI para experimentación y pipelines rápidos
 
 ## Estado del Proyecto
 
-Versión actual: `0.1.0`  
-Enfoque actual: estabilización de core de procesamiento y calidad de interfaz/uso.
+Versión actual: `0.2.0`  
+Estado: `alpha`  
+Enfoque actual: consolidación del core morfológico, API pública y empaquetado.
 
 ## Requisitos
 
 - Python `>= 3.7`
-- Dependencias principales:
-  - `opencv-python`
-  - `numpy`
-  - `scikit-image`
-  - `matplotlib`
 
 ## Instalación
 
@@ -57,41 +37,17 @@ Enfoque actual: estabilización de core de procesamiento y calidad de interfaz/u
 pip install -e .
 ```
 
-## Uso por CLI
+`vispyx` usa empaquetado moderno con `pyproject.toml`.
 
-Sintaxis general:
-
-```bash
-vispyx <method> <image_path> [flags]
-```
-
-Métodos disponibles:
-
-- `clahe`
-- `otsu`
-- `vpx_erode`
-- `vpx_dilate`
-- `vpx_open`
-- `vpx_close`
-- `vpx_gradient`
-- `vpx_tophat`
-- `vpx_blackhat`
-- `vpx_boundary`
-
-Ejemplos:
+Para instalar dependencias de desarrollo:
 
 ```bash
-# CLAHE
-vispyx clahe archive/all-mias/mdb001.pgm --clip 3.0 --grid 8 --output outputs/mdb001_clahe.pgm
-
-# Otsu
-vispyx otsu archive/all-mias/mdb001.pgm --output outputs/mdb001_otsu.pgm
-
-# Morfología desde cero (alias --kernel)
-vispyx vpx_erode archive/all-mias/mdb001.pgm --kernel 5 --iterations 2 --output outputs/mdb001_erode.pgm
+pip install -e .[dev]
 ```
 
-## Uso por API (Python)
+## Quick Start
+
+### API
 
 ```python
 from vispyx import (
@@ -110,14 +66,32 @@ binary = segment_otsu(smoothed)
 clean_mask = vpx_open(binary, kernel=kernel_disk(1), iterations=1)
 ```
 
-## Guías de Uso
+### CLI
 
-- Documentación general: [docs/README.md](./docs/README.md)
+```bash
+# CLAHE
+vispyx clahe imagen.pgm --clip 3.0 --grid 8 --output outputs/clahe.pgm
+
+# Segmentación Otsu
+vispyx otsu imagen.pgm --output outputs/otsu.pgm
+
+# Morfología binaria
+vispyx vpx_open mascara.pgm --kernel 3 --output outputs/open.pgm
+
+# Skeletonization
+vispyx vpx_skeletonize mascara.pgm --output outputs/skeleton.pgm
+```
+
+## Documentation
+
+- Guía integral: [docs/system_usage.md](./docs/system_usage.md)
+- Referencia de API: [docs/api_reference.md](./docs/api_reference.md)
+- Referencia de CLI: [docs/cli_reference.md](./docs/cli_reference.md)
 - Morfología binaria: [docs/binary_morphology_usage.md](./docs/binary_morphology_usage.md)
-- Morfología en escala de grises: [docs/grayscale_morphology_usage.md](./docs/grayscale_morphology_usage.md)
-- API pública y kernels: [docs/public_api_and_kernels.md](./docs/public_api_and_kernels.md)
+- Morfología grayscale: [docs/grayscale_morphology_usage.md](./docs/grayscale_morphology_usage.md)
+- Índice completo: [docs/README.md](./docs/README.md)
 
-## Estructura
+## Package Layout
 
 ```text
 vispyx/
@@ -125,6 +99,9 @@ vispyx/
 │   ├── __init__.py
 │   ├── cli.py
 │   ├── kernels.py
+│   ├── morphology_common.py
+│   ├── morphology_binary.py
+│   ├── morphology_grayscale.py
 │   ├── preprocessing.py
 │   ├── segmentation.py
 │   ├── morphology.py
@@ -134,11 +111,15 @@ vispyx/
 └── docs/
 ```
 
-## Testing
+## Development
 
 ```bash
 pytest -q
 ```
+
+Historial de cambios:
+
+- [CHANGELOG.md](./CHANGELOG.md)
 
 ## Licencia
 
