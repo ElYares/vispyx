@@ -14,13 +14,28 @@
 
 - Preprocesamiento de contraste con `CLAHE`
 - Segmentación binaria con umbral de `Otsu`
-- Operaciones morfológicas propias (`vpx_*`):
+- Morfología binaria implementada desde cero (`vpx_*`):
   - `vpx_erode`
   - `vpx_dilate`
   - `vpx_open`
   - `vpx_close`
   - `vpx_gradient`
+  - `vpx_tophat`
+  - `vpx_blackhat`
+  - `vpx_boundary`
+  - `vpx_hitmiss`
+- Morfología en escala de grises (`gray_*`):
+  - `gray_erode`
+  - `gray_dilate`
+  - `gray_open`
+  - `gray_close`
+- Generadores formales de kernels:
+  - `kernel_square`
+  - `kernel_cross`
+  - `kernel_diamond`
+  - `kernel_disk`
 - CLI para ejecutar pipelines sin escribir código
+- API pública limpia desde `vispyx`
 
 ## Estado del Proyecto
 
@@ -59,6 +74,9 @@ Métodos disponibles:
 - `vpx_open`
 - `vpx_close`
 - `vpx_gradient`
+- `vpx_tophat`
+- `vpx_blackhat`
+- `vpx_boundary`
 
 Ejemplos:
 
@@ -76,25 +94,37 @@ vispyx vpx_erode archive/all-mias/mdb001.pgm --kernel 5 --iterations 2 --output 
 ## Uso por API (Python)
 
 ```python
-from vispyx.preprocessing import apply_clahe
-from vispyx.segmentation import segment_otsu
-from vispyx.morphology import vpx_erode
-from vispyx.utils import read_grayscale
-import numpy as np
+from vispyx import (
+    apply_clahe,
+    gray_close,
+    kernel_disk,
+    read_grayscale,
+    segment_otsu,
+    vpx_open,
+)
 
 img = read_grayscale("archive/all-mias/mdb001.pgm")
 clahe = apply_clahe(img, clip_limit=3.0, tile_grid_size=(8, 8))
-binary = segment_otsu(clahe)
-kernel = np.ones((5, 5), dtype=np.uint8)
-eroded = vpx_erode(binary, kernel=kernel, iterations=1)
+smoothed = gray_close(clahe, kernel=kernel_disk(1))
+binary = segment_otsu(smoothed)
+clean_mask = vpx_open(binary, kernel=kernel_disk(1), iterations=1)
 ```
+
+## Guías de Uso
+
+- Documentación general: [docs/README.md](./docs/README.md)
+- Morfología binaria: [docs/binary_morphology_usage.md](./docs/binary_morphology_usage.md)
+- Morfología en escala de grises: [docs/grayscale_morphology_usage.md](./docs/grayscale_morphology_usage.md)
+- API pública y kernels: [docs/public_api_and_kernels.md](./docs/public_api_and_kernels.md)
 
 ## Estructura
 
 ```text
 vispyx/
 ├── vispyx/
+│   ├── __init__.py
 │   ├── cli.py
+│   ├── kernels.py
 │   ├── preprocessing.py
 │   ├── segmentation.py
 │   ├── morphology.py
