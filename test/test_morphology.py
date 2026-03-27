@@ -2,10 +2,13 @@ import numpy as np
 import pytest
 
 from vispyx.morphology import (
+    gray_blackhat,
     gray_close,
     gray_dilate,
     gray_erode,
+    gray_gradient,
     gray_open,
+    gray_tophat,
     vpx_blackhat,
     vpx_boundary,
     vpx_close,
@@ -14,6 +17,9 @@ from vispyx.morphology import (
     vpx_gradient,
     vpx_hitmiss,
     vpx_open,
+    vpx_reconstruct,
+    vpx_skeletonize,
+    vpx_thin,
     vpx_tophat,
 )
 
@@ -166,6 +172,67 @@ def test_gray_close_fills_small_dark_hole():
     expected = np.full((5, 5), 80, dtype=np.uint8)
 
     result = gray_close(image)
+
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_gray_gradient_returns_local_contrast_envelope():
+    image = np.array(
+        [
+            [10, 20, 30],
+            [40, 50, 60],
+            [70, 80, 90],
+        ],
+        dtype=np.uint8,
+    )
+    expected = np.array(
+        [
+            [40, 50, 40],
+            [70, 80, 70],
+            [40, 50, 40],
+        ],
+        dtype=np.uint8,
+    )
+
+    result = gray_gradient(image)
+
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_gray_tophat_extracts_small_bright_peak_removed_by_opening():
+    image = np.array(
+        [
+            [10, 10, 10, 10, 10],
+            [10, 10, 10, 10, 10],
+            [10, 10, 80, 10, 10],
+            [10, 10, 10, 10, 10],
+            [10, 10, 10, 10, 10],
+        ],
+        dtype=np.uint8,
+    )
+    expected = np.zeros((5, 5), dtype=np.uint8)
+    expected[2, 2] = 70
+
+    result = gray_tophat(image)
+
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_gray_blackhat_extracts_small_dark_hole_filled_by_closing():
+    image = np.array(
+        [
+            [80, 80, 80, 80, 80],
+            [80, 80, 80, 80, 80],
+            [80, 80, 10, 80, 80],
+            [80, 80, 80, 80, 80],
+            [80, 80, 80, 80, 80],
+        ],
+        dtype=np.uint8,
+    )
+    expected = np.zeros((5, 5), dtype=np.uint8)
+    expected[2, 2] = 70
+
+    result = gray_blackhat(image)
 
     np.testing.assert_array_equal(result, expected)
 
@@ -446,6 +513,100 @@ def test_vpx_hitmiss_rejects_overlapping_kernels():
 
     with pytest.raises(ValueError, match="must not overlap"):
         vpx_hitmiss(image, kernel_hit=kernel_hit, kernel_miss=kernel_miss)
+
+
+def test_vpx_reconstruct_restores_connected_region_under_mask():
+    marker = _to_uint8(
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ]
+    )
+    mask = _to_uint8(
+        [
+            [0, 0, 0, 0, 0],
+            [0, 1, 1, 1, 0],
+            [0, 1, 1, 1, 0],
+            [0, 1, 1, 1, 0],
+            [0, 0, 0, 0, 0],
+        ]
+    )
+
+    result = vpx_reconstruct(marker, mask)
+
+    np.testing.assert_array_equal(result, mask)
+
+
+def test_vpx_reconstruct_rejects_marker_outside_mask():
+    marker = _to_uint8(
+        [
+            [0, 0, 0],
+            [0, 0, 1],
+            [0, 0, 0],
+        ]
+    )
+    mask = _to_uint8(
+        [
+            [0, 0, 0],
+            [0, 1, 0],
+            [0, 0, 0],
+        ]
+    )
+
+    with pytest.raises(ValueError, match="marker must be a subset of mask"):
+        vpx_reconstruct(marker, mask)
+
+
+def test_vpx_skeletonize_reduces_solid_block_to_single_center_pixel():
+    image = _to_uint8(
+        [
+            [0, 0, 0, 0, 0],
+            [0, 1, 1, 1, 0],
+            [0, 1, 1, 1, 0],
+            [0, 1, 1, 1, 0],
+            [0, 0, 0, 0, 0],
+        ]
+    )
+    expected = _to_uint8(
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ]
+    )
+
+    result = vpx_skeletonize(image)
+
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_vpx_thin_supports_progressive_binary_thinning():
+    image = _to_uint8(
+        [
+            [0, 0, 0, 0, 0],
+            [0, 1, 1, 1, 0],
+            [0, 1, 1, 1, 0],
+            [0, 1, 1, 1, 0],
+            [0, 0, 0, 0, 0],
+        ]
+    )
+
+    result = vpx_thin(image, iterations=1)
+
+    assert result.dtype == np.uint8
+    assert 0 < np.count_nonzero(result) <= np.count_nonzero(image)
+
+
+def test_vpx_thin_rejects_non_positive_iterations():
+    image = _to_uint8([[1, 1], [1, 1]])
+
+    with pytest.raises(ValueError, match="iterations must be a positive integer"):
+        vpx_thin(image, iterations=0)
 
 
 def test_vpx_erode_supports_multiple_iterations():
