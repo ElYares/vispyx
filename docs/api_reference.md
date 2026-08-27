@@ -1,6 +1,6 @@
 # API Reference
 
-Referencia de la API pública de `vispyx` (`0.2.0`). Todo lo listado aquí se
+Referencia de la API pública de `vispyx` (`0.2.1`). Todo lo listado aquí se
 importa directamente desde el paquete raíz:
 
 ```python
@@ -214,27 +214,21 @@ son estables (los tests dependen de ellos literalmente).
 
 Cosas que no se deducen leyendo las firmas:
 
-1. **`iterations=True` pasa la validación** y equivale a `iterations=1`, porque
-   `bool` es subclase de `int` en Python.
-2. **`iterations=np.int64(3)` es rechazado** con
-   `ValueError("iterations must be a positive integer")`, aunque sea un entero
-   positivo. La validación exige `int` nativo de Python, y
-   `isinstance(np.int64(3), int)` es `False`.
-3. **Las `gray_*` explotan con listas de Python.**
-   `gray_erode([[1,2],[3,4]])` lanza
-   `AttributeError: 'list' object has no attribute 'dtype'`, no un `ValueError`
-   limpio: `apply_grayscale_operation` termina con
-   `img.astype(image.dtype)` usando el parámetro **crudo**, no el validado.
-   Afecta a `gray_erode`, `gray_dilate`, `gray_open` y `gray_close`;
-   `gray_gradient`, `gray_tophat` y `gray_blackhat` no lo sufren porque casan
-   contra el array ya validado. Pasa siempre `np.ndarray`.
-4. **Los kernels no necesitan ser cuadrados**, solo tener ambas dimensiones
+1. **`iterations=True` es rechazado** con
+   `ValueError("iterations must be a positive integer")`, aunque `bool` sea
+   subclase de `int`. Es deliberado: `iterations=True` es un error que conviene
+   reportar, no una petición de una iteración.
+2. **Cualquier tipo entero sirve para `iterations`**, NumPy incluido:
+   `np.int64(2)`, `np.int32(2)` y `np.uint8(2)` son equivalentes a `2`. La
+   validación acepta `numbers.Integral`. Un `float` como `2.0` sigue siendo un
+   error.
+3. **Los kernels no necesitan ser cuadrados**, solo tener ambas dimensiones
    impares: `(3, 5)` y `(1, 7)` son válidos.
-5. **Un kernel más grande que la imagen no falla.** `np.pad(mode="reflect")`
+4. **Un kernel más grande que la imagen no falla.** `np.pad(mode="reflect")`
    repite el patrón reflejado cuantas veces haga falta; el resultado deja de ser
    un reflejo con sentido físico, pero no hay excepción.
-6. **`vpx_hitmiss` es la única binaria sin `iterations`**: siempre una pasada.
-7. **`vpx_thin(image)` con el default hace una sola pasada** de Zhang-Suen, no
+5. **`vpx_hitmiss` es la única binaria sin `iterations`**: siempre una pasada.
+6. **`vpx_thin(image)` con el default hace una sola pasada** de Zhang-Suen, no
    el esqueleto completo. Para el esqueleto usa `vpx_skeletonize`.
 
 ## Ejemplo completo

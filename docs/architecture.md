@@ -118,34 +118,23 @@ suite. La tabla completa está en
 
 Cosas reales del código, no hipótesis:
 
-1. **`apply_grayscale_operation` casa contra el parámetro crudo.**
-   `img.astype(image.dtype)` usa `image`, no el array validado, así que una
-   lista de Python produce `AttributeError` en lugar de `ValueError`. Arreglo de
-   una línea: usar el array ya convertido, como ya hacen `gray_gradient`,
-   `gray_tophat` y `gray_blackhat`.
-2. **`validate_iterations` rechaza enteros de NumPy.** `np.int64(3)` falla
-   porque `isinstance(np.int64(3), int)` es `False`, y en cambio `True` pasa
-   porque `bool` sí es `int`. Ambos comportamientos son accidentes de
-   `isinstance`.
-3. **Imports muertos**: `numpy` en `preprocessing.py` y `utils.py`, `cv2` en
-   `segmentation.py`.
-4. **`read_grayscale` devuelve `None` en silencio** cuando falla la lectura,
+1. **`read_grayscale` devuelve `None` en silencio** cuando falla la lectura,
    mientras que el CLI tiene su propio `_read_grayscale` que sí lanza
    `FileNotFoundError`. Dos lectores con contratos distintos para lo mismo.
-5. **`cli.py` no comprueba el retorno de `cv2.imwrite`**: puede imprimir
+2. **`cli.py` no comprueba el retorno de `cv2.imwrite`**: puede imprimir
    "Imagen guardada" sin haber guardado nada.
-6. **`morph_scipy.py` sigue fuera del paquete instalable**, pero ya no es código
+3. **`morph_scipy.py` sigue fuera del paquete instalable**, pero ya no es código
    huérfano: `test/test_reference_scipy.py` lo usa como oráculo de referencia
    para validar las operaciones binarias. `scipy` está declarado en el extra
    `dev`. Cubre erode, dilate, open, close y gradient; el resto de las
    operaciones sigue sin oráculo — ver [testing.md](./testing.md).
-7. **`examples/demo.ipynb` está vacío** (0 bytes) desde el commit que lo
+4. **`examples/demo.ipynb` está vacío** (0 bytes) desde el commit que lo
    introdujo. El README no lo menciona, pero el directorio `examples/` sugiere
    contenido que no existe.
-8. **El CLI no expone los generadores de kernels.** Construye siempre
+5. **El CLI no expone los generadores de kernels.** Construye siempre
    `np.ones((n, n))`; `kernel_cross`, `kernel_diamond` y `kernel_disk` solo son
    alcanzables desde Python.
-9. **Cuatro operaciones binarias no están en el CLI**: `vpx_tophat`,
+6. **Cuatro operaciones binarias no están en el CLI**: `vpx_tophat`,
    `vpx_blackhat`, `vpx_boundary` y `vpx_hitmiss`.
 
 ## Cómo agregar una operación

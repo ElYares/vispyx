@@ -29,7 +29,7 @@ Requiere Python `>= 3.7`. Dependencias declaradas: `opencv-python`, `numpy`,
 Verificar que quedó bien:
 
 ```bash
-python -c "import vispyx; print(vispyx.__version__)"   # 0.2.0
+python -c "import vispyx; print(vispyx.__version__)"   # 0.2.1
 vispyx --help
 pytest -q                                              # 49 passed
 ```
@@ -144,10 +144,9 @@ Recogidas del código, todas verificadas:
 
 - **`vpx_thin(img)` no da el esqueleto.** El default `iterations=1` hace una sola
   pasada de Zhang-Suen. El esqueleto es `vpx_skeletonize(img)`.
-- **`iterations=np.int64(2)` falla** con `ValueError`. La validación exige `int`
-  nativo. Usa `int(n)` si el valor viene de NumPy.
-- **`gray_erode([[1,2],[3,4]])` lanza `AttributeError`**, no `ValueError`. Pasa
-  siempre `np.ndarray` a las `gray_*`.
+- **`iterations=True` falla** con `ValueError`, a propósito: `bool` es subclase
+  de `int`, pero pasar `True` es un error, no una petición de una iteración. Los
+  enteros de NumPy (`np.int64(2)`) sí son válidos.
 - **`read_grayscale` devuelve `None` sin avisar** si el archivo no existe o no se
   puede decodificar.
 - **`apply_clahe` acepta `title_grid_size`** (con typo) por compatibilidad, y si
@@ -183,7 +182,6 @@ Las excepciones a esa regla, y por lo tanto lo que hay que envolver a mano:
 - `read_grayscale` → `None` silencioso
 - `apply_clahe` y `segment_otsu` → `cv2.error` / excepciones de skimage sin
   traducir
-- las `gray_*` con listas → `AttributeError`
 
 ## Ver también
 

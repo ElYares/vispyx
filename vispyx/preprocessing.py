@@ -1,6 +1,5 @@
 import cv2
 
-import numpy as np
 
 def apply_clahe(image, clip_limit=2.0, tile_grid_size=(8, 8), title_grid_size=None):
     """
