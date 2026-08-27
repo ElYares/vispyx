@@ -1,5 +1,12 @@
 # Changelog
 
+## No publicado
+
+- `examples/demo.ipynb` deja de estar vacio: notebook ejecutable con el pipeline
+  completo paso a paso, la comparacion medida de que preprocesamiento resuelve
+  el problema, las cuatro formas de kernel y la trampa de pasar grises a una
+  `vpx_*`
+
 ## 0.2.1
 
 Pulido de contrato, sin comportamiento nuevo.

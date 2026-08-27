@@ -26,7 +26,9 @@
 
 ## Por dónde empezar
 
-- **Nunca usaste el paquete** → [system_usage.md](./system_usage.md)
+- **Nunca viste el paquete** → [`examples/demo.ipynb`](../examples/demo.ipynb),
+  el pipeline completo corriendo, con la imagen en cada paso
+- **Nunca lo usaste, pero ya lo viste** → [system_usage.md](./system_usage.md)
 - **Buscas una firma concreta** → [api_reference.md](./api_reference.md)
 - **Quieres procesar imágenes sin escribir Python** → [cli_reference.md](./cli_reference.md)
 - **Vas a tocar el código** → [architecture.md](./architecture.md), después [testing.md](./testing.md)
