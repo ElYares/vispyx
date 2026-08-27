@@ -9,8 +9,9 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **123 tests, 123 pasan, ~1.4 s** (Python 3.14.5, numpy 2.5.2,
-OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1, scipy 1.16).
+Estado verificado: **137 tests, 137 pasan, ~1.4 s** (Python 3.13.13, numpy
+2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
+scipy 1.18).
 
 Hay un `conftest.py` vacío en la raíz: existe solo para poner el directorio del
 repo en `sys.path`, y así permitir que `test_reference_scipy.py` importe
@@ -26,7 +27,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | Archivo | Tests | Qué fija |
 |---|---|---|
 | `test_morphology.py` | 36 | el núcleo algorítmico, binario y grayscale |
-| `test_cli_main.py` | 30 | el parser: flags, guardado y códigos de salida |
+| `test_cli_main.py` | 44 | el parser: flags, guardado y códigos de salida |
 | `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
 | `test_utils.py` | 9 | el lector de imágenes y `show_image` |
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
@@ -75,8 +76,8 @@ Lo que sí queda amarrado:
 
 `main()` son 222 líneas de parseo y despacho, y hasta la `0.3.0` no tenían un
 solo test. Ahora sí: los **17 métodos** corren de punta a punta escribiendo a
-disco, más las flags (`--output`, `--kernel`/`--kernel-size`, `--iterations`,
-`--clip`/`--grid`), la creación de directorios, el mensaje
+disco, más las flags (`--output`, `--kernel`/`--kernel-size`, `--kernel-shape`,
+`--iterations`, `--clip`/`--grid`), la creación de directorios, el mensaje
 `"Imagen procesada. No se guardó."`, los códigos de salida `2` de `argparse`, y
 que los errores de lectura sean los mismos que ve quien usa la API.
 
@@ -89,6 +90,14 @@ programación, y la parametrización la ejercita.
 
 Fuera de alcance a propósito: `--show`, que fuerza el backend `TkAgg` y necesita
 display.
+
+**El tamaño del kernel decide qué puede probar un test de forma.** Las cuatro
+formas coinciden entre sí para radios chicos: en `3` la cruz, el diamante y el
+disco son la misma matriz; en `5` lo son el diamante y el disco; recién en `7`
+las cuatro difieren. Un test de `--kernel-shape` escrito con `3` no distingue
+nada, y uno escrito con `5` deja pasar que las ramas `diamond` y `disk` estén
+cambiadas. Verificado mutando: con la suite entera en `5`, esa permutación pasa
+sin una sola falla.
 
 ## Huecos de cobertura
 
