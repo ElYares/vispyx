@@ -89,6 +89,8 @@ vispyx vpx_skeletonize mascara.pgm --output outputs/skeleton.pgm
 - Referencia de CLI: [docs/cli_reference.md](./docs/cli_reference.md)
 - Morfología binaria: [docs/binary_morphology_usage.md](./docs/binary_morphology_usage.md)
 - Morfología grayscale: [docs/grayscale_morphology_usage.md](./docs/grayscale_morphology_usage.md)
+- Arquitectura interna: [docs/architecture.md](./docs/architecture.md)
+- Estado de los tests: [docs/testing.md](./docs/testing.md)
 - Índice completo: [docs/README.md](./docs/README.md)
 
 ## Package Layout
