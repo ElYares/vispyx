@@ -22,9 +22,8 @@ venv/
 # Project-generated outputs
 outputs/
 
-# Large/local datasets and docs (requested)
+# Large/local datasets
 archive/
-docs/
 
 # Images and scan files (requested)
 *.pgm
