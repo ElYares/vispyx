@@ -2,10 +2,21 @@
 
 ## No publicado
 
+- `--kernel-shape` en el CLI: `square` (default), `cross`, `diamond` y `disk`.
+  Los cuatro generadores de `vispyx.kernels` dejan de ser alcanzables solo
+  desde Python. Omitir la flag construye el mismo cuadrado de unos de siempre
+- para `disk`, el radio se deriva como `--kernel-size // 2`, porque
+  `kernel_disk` toma radio y no lado. `--kernel-size 5` da un disco de 5x5
+- **cambio de mensaje de error**: `--kernel-size` par ahora falla con
+  `ValueError: size must be odd`, lanzado al construir el kernel y antes de
+  leer la imagen. Antes salia `ValueError: kernel dimensions must be odd`,
+  desde `validate_kernel` y ya dentro de la operacion. Vale para las cuatro
+  formas, el disco incluido: sin esa validacion un `4` daria radio `2` y el
+  mismo disco que un `5`, en silencio
 - `test/test_cli_main.py`: 30 tests sobre `main()`, que no tenia ninguno. Cubre
   los 17 metodos de punta a punta, las flags, la creacion de directorios, los
   codigos de salida y los errores de lectura
-- cobertura de 93 a 123 tests
+- cobertura de 93 a 137 tests
 
 ## 0.3.0
 

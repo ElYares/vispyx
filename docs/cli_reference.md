@@ -71,12 +71,47 @@ la API de Python pero no están expuestos en el CLI**.
 | `--grid` | `grid` | `int` | `8` | `clahe` (se usa como `(grid, grid)`) |
 | `--kernel-size` | `kernel_size` | `int` | `3` | todos los `vpx_*`/`gray_*` con kernel |
 | `--kernel` | `kernel_size` | `int` | alias | igual que `--kernel-size` |
+| `--kernel-shape` | `kernel_shape` | `str` | `square` | todos los `vpx_*`/`gray_*` con kernel |
 | `--iterations` | `iterations` | `int` | `1` | `vpx_erode/dilate/open/close/gradient`, `vpx_thin`, todos los `gray_*` |
 | `--max-iterations` | `max_iterations` | `int` | `None` | `vpx_reconstruct`, `vpx_skeletonize` |
 
 `--kernel` y `--kernel-size` comparten `dest`. El default efectivo es `3`
 porque `--kernel-size` se registra primero; pasar `--kernel N` sobrescribe
 correctamente el valor.
+
+### `--kernel-shape`
+
+Los valores válidos son `square`, `cross`, `diamond` y `disk`; cualquier otro lo
+rechaza `argparse` con salida `2`. Cada uno delega en el generador homónimo de
+`vispyx.kernels`:
+
+| Valor | Kernel construido |
+|---|---|
+| `square` (default) | `kernel_square(--kernel-size)` |
+| `cross` | `kernel_cross(--kernel-size)` |
+| `diamond` | `kernel_diamond(--kernel-size)` |
+| `disk` | `kernel_disk(--kernel-size // 2)` |
+
+**El disco es el caso raro**: `kernel_disk` toma un **radio**, no un lado, así
+que el CLI deriva `radio = --kernel-size // 2`. `--kernel-shape disk
+--kernel-size 5` es `kernel_disk(2)`, que mide 5×5. El lado pedido y el lado
+obtenido coinciden porque el tamaño se exige impar — ver abajo.
+
+**Las cuatro formas exigen `--kernel-size` impar**, el disco incluido. Sin esa
+validación un `4` daría radio `2` y **el mismo disco que un `5`**, en silencio,
+mientras las otras tres formas lo rechazan.
+
+**Formas distintas no siempre dan kernels distintos.** Para radios chicos
+coinciden entre sí:
+
+| Tamaño | Qué coincide |
+|---|---|
+| `3` | `cross` == `diamond` == `disk` |
+| `5` | `diamond` == `disk` |
+| `7` | las cuatro difieren |
+
+Si estás comparando formas y no ves diferencia, sube el tamaño antes de suponer
+que la flag no funciona.
 
 ## Qué hace cada método
 
@@ -90,26 +125,27 @@ por `vispyx otsu`.
 |---|---|---|
 | `clahe` | `apply_clahe(img, clip_limit=--clip, tile_grid_size=(--grid, --grid))` | `--clip`, `--grid` |
 | `otsu` | `segment_otsu(img)` | ninguna |
-| `vpx_erode` | `vpx_erode(binary, kernel, iterations)` | `--kernel-size`, `--iterations` |
-| `vpx_dilate` | `vpx_dilate(binary, kernel, iterations)` | `--kernel-size`, `--iterations` |
-| `vpx_open` | `vpx_open(binary, kernel, iterations)` | `--kernel-size`, `--iterations` |
-| `vpx_close` | `vpx_close(binary, kernel, iterations)` | `--kernel-size`, `--iterations` |
-| `vpx_gradient` | `vpx_gradient(binary, kernel, iterations)` | `--kernel-size`, `--iterations` |
-| `vpx_reconstruct` | `vpx_reconstruct(marker, mask, kernel, max_iterations)` | `--mask`, `--kernel-size`, `--max-iterations` |
+| `vpx_erode` | `vpx_erode(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
+| `vpx_dilate` | `vpx_dilate(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
+| `vpx_open` | `vpx_open(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
+| `vpx_close` | `vpx_close(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
+| `vpx_gradient` | `vpx_gradient(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
+| `vpx_reconstruct` | `vpx_reconstruct(marker, mask, kernel, max_iterations)` | `--mask`, `--kernel-size`, `--kernel-shape`, `--max-iterations` |
 | `vpx_skeletonize` | `vpx_skeletonize(binary, max_iterations)` | `--max-iterations` |
 | `vpx_thin` | `vpx_thin(binary, iterations)` | `--iterations` |
-| `gray_*` | la función `gray_*` correspondiente, **sin binarizar** | `--kernel-size`, `--iterations` |
+| `gray_*` | la función `gray_*` correspondiente, **sin binarizar** | `--kernel-size`, `--kernel-shape`, `--iterations` |
 
 Detalles que sorprenden si no se leen:
 
 - `vpx_reconstruct` ignora `--iterations`; su límite es `--max-iterations`
-- `vpx_skeletonize` ignora `--kernel-size` y `--iterations`
-- `vpx_thin` ignora `--kernel-size` y `--max-iterations`, y con el default
+- `vpx_skeletonize` ignora `--kernel-size`, `--kernel-shape` y `--iterations`
+- `vpx_thin` ignora `--kernel-size`, `--kernel-shape` y `--max-iterations`, y con el default
   `--iterations 1` ejecuta **una sola pasada** de Zhang-Suen (adelgazamiento
   parcial, no esqueleto completo)
-- el CLI construye siempre un kernel cuadrado de unos (`np.ones((n, n))`). Los
-  generadores `kernel_cross`, `kernel_diamond` y `kernel_disk` **no están
-  expuestos**; para usarlos hay que ir por la API de Python
+- el CLI construye un cuadrado de unos **solo si se omite `--kernel-shape`**.
+  Los cuatro generadores de `vispyx.kernels` son alcanzables desde la línea de
+  comandos; lo único que sigue fuera de alcance son los kernels no cuadrados
+  (`3×5`), que la API acepta y la flag no puede expresar
 
 ## Salida
 
@@ -150,7 +186,8 @@ Tkinter, `--show` falla.
 | `FileNotFoundError: No se encontró la imagen en <ruta>` | `read_grayscale`, cuando no hay ningún archivo en la ruta |
 | `ValueError: No se pudo decodificar la imagen en <ruta>` | `read_grayscale`, cuando el archivo existe pero no es una imagen legible |
 | `ValueError: --kernel-size debe ser un entero positivo` | `_build_kernel`, con `kernel_size <= 0` |
-| `ValueError: kernel dimensions must be odd` | `validate_kernel`, con `--kernel-size` **par**. El CLI no lo valida antes, el error aparece ya dentro de la operación morfológica |
+| `ValueError: size must be odd` | `_validate_size` en `kernels.py`, con `--kernel-size` **par**, en cualquiera de las cuatro formas. Falla al construir el kernel, **antes** de leer la imagen |
+| `ValueError: Forma de kernel no reconocida: <valor>` | `_build_kernel` llamado desde Python con una forma que `argparse` no filtró. Por el CLI es inalcanzable: ahí lo ataja `choices` con salida `2` |
 | `ValueError: iterations must be a positive integer` | `validate_iterations`, con `--iterations 0` o `--max-iterations 0` |
 | `ValueError: marker must be a subset of mask` | `vpx_reconstruct`, marcador fuera de la máscara |
 | `ValueError: marker and mask must have the same shape` | `vpx_reconstruct`, formas distintas |
@@ -191,6 +228,15 @@ vispyx vpx_thin mascara.pgm --iterations 1 -o outputs/thin.pgm
 # morfología en grises (sin binarizar)
 vispyx gray_close imagen.pgm --kernel-size 3 -o outputs/gray_close.pgm
 vispyx gray_tophat imagen.pgm --kernel-size 5 -o outputs/tophat.pgm
+
+# forma del elemento estructurante: la cruz preserva las esquinas
+vispyx vpx_erode mascara.pgm --kernel-size 5 --kernel-shape cross -o outputs/cross.pgm
+
+# disco de radio 2 (5x5): el radio sale de --kernel-size // 2
+vispyx vpx_open mascara.pgm --kernel-size 5 --kernel-shape disk -o outputs/disk.pgm
+
+# para separar diamante de disco hace falta 7: en 5 son el mismo kernel
+vispyx gray_tophat imagen.pgm --kernel-size 7 --kernel-shape diamond -o outputs/diamond.pgm
 ```
 
 ## Pipeline típico en una línea de comandos
