@@ -70,7 +70,6 @@ función `run_*`, y `docs/cli_reference.md`. Cierra con `CHANGELOG.md`.
   dilataciones*, no *n aperturas*
 - `vispyx.__version__` está clavado en un test: subir la versión sin actualizar
   `test_public_api.py` rompe la suite
-- `examples/demo.ipynb` está vacío (0 bytes) desde el commit que lo introdujo
 - `morph_scipy.py` (raíz) está fuera del paquete instalable, pero
   `test/test_reference_scipy.py` lo usa como oráculo de referencia. El
   `conftest.py` de la raíz existe solo para que ese import funcione

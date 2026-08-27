@@ -128,13 +128,10 @@ Cosas reales del código, no hipótesis:
    para validar las operaciones binarias. `scipy` está declarado en el extra
    `dev`. Cubre erode, dilate, open, close y gradient; el resto de las
    operaciones sigue sin oráculo — ver [testing.md](./testing.md).
-4. **`examples/demo.ipynb` está vacío** (0 bytes) desde el commit que lo
-   introdujo. El README no lo menciona, pero el directorio `examples/` sugiere
-   contenido que no existe.
-5. **El CLI no expone los generadores de kernels.** Construye siempre
+4. **El CLI no expone los generadores de kernels.** Construye siempre
    `np.ones((n, n))`; `kernel_cross`, `kernel_diamond` y `kernel_disk` solo son
    alcanzables desde Python.
-6. **Cuatro operaciones binarias no están en el CLI**: `vpx_tophat`,
+5. **Cuatro operaciones binarias no están en el CLI**: `vpx_tophat`,
    `vpx_blackhat`, `vpx_boundary` y `vpx_hitmiss`.
 
 ## Cómo agregar una operación

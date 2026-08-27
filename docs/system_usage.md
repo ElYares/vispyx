@@ -100,7 +100,9 @@ assert limpia.dtype == np.uint8 and set(np.unique(limpia)) <= {0, 255}
 ```
 
 El mismo pipeline por CLI está en
-[cli_reference.md](./cli_reference.md#pipeline-típico-en-una-línea-de-comandos).
+[cli_reference.md](./cli_reference.md#pipeline-típico-en-una-línea-de-comandos),
+y corriendo paso a paso, con la imagen a la vista, en
+[`examples/demo.ipynb`](../examples/demo.ipynb).
 
 ## Elegir el kernel
 

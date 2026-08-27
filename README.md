@@ -84,6 +84,7 @@ vispyx vpx_skeletonize mascara.pgm --output outputs/skeleton.pgm
 
 ## Documentation
 
+- Demo ejecutable: [examples/demo.ipynb](./examples/demo.ipynb)
 - Guía integral: [docs/system_usage.md](./docs/system_usage.md)
 - Referencia de API: [docs/api_reference.md](./docs/api_reference.md)
 - Referencia de CLI: [docs/cli_reference.md](./docs/cli_reference.md)
