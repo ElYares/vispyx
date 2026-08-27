@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **93 tests, 93 pasan, ~1.2 s** (Python 3.14.5, numpy 2.5.2,
+Estado verificado: **123 tests, 123 pasan, ~1.4 s** (Python 3.14.5, numpy 2.5.2,
 OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1, scipy 1.16).
 
 Hay un `conftest.py` vacío en la raíz: existe solo para poner el directorio del
@@ -26,11 +26,12 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | Archivo | Tests | Qué fija |
 |---|---|---|
 | `test_morphology.py` | 36 | el núcleo algorítmico, binario y grayscale |
+| `test_cli_main.py` | 30 | el parser: flags, guardado y códigos de salida |
+| `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
+| `test_utils.py` | 9 | el lector de imágenes y `show_image` |
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | tres funciones `run_*` con I/O real en disco |
-| `test_reference_scipy.py` | 29 |
-| `test_utils.py` | 9 | el lector de imágenes y `show_image` | diferencial contra la implementación de referencia en SciPy |
 | `test_preprocessing.py` | 2 | shape y tipo de `apply_clahe`, nada más |
 
 ## Qué se verifica de verdad
@@ -70,6 +71,25 @@ Lo que sí queda amarrado:
 - `vispyx.__version__ == "0.3.0"` está clavado en un test: **subir la versión
   rompe la suite si no se actualiza también ahí**.
 
+## Lo que cubre `test_cli_main.py`
+
+`main()` son 222 líneas de parseo y despacho, y hasta la `0.3.0` no tenían un
+solo test. Ahora sí: los **17 métodos** corren de punta a punta escribiendo a
+disco, más las flags (`--output`, `--kernel`/`--kernel-size`, `--iterations`,
+`--clip`/`--grid`), la creación de directorios, el mensaje
+`"Imagen procesada. No se guardó."`, los códigos de salida `2` de `argparse`, y
+que los errores de lectura sean los mismos que ve quien usa la API.
+
+**Por qué la parametrización sobre los 17 métodos vale más de lo que parece**:
+si alguien agrega un método a la lista `methods` y olvida su rama de despacho,
+ese test falla. Es la razón por la que la rama
+`else: raise ValueError("Método no reconocido")` **se conserva** pese a ser
+inalcanzable desde `argparse`: no es código muerto, es la red para ese error de
+programación, y la parametrización la ejercita.
+
+Fuera de alcance a propósito: `--show`, que fuerza el backend `TkAgg` y necesita
+display.
+
 ## Huecos de cobertura
 
 Reales, verificados leyendo la suite completa.
@@ -81,16 +101,6 @@ Reales, verificados leyendo la suite completa.
 `utils.py` dejó de estar en esta lista: `test_utils.py` cubre las dos funciones,
 incluida la distinción entre archivo ausente e ilegible, y que el CLI use ese
 mismo lector.
-
-### `cli.py`: 3 de 17 métodos
-
-Sin cubrir: `run_clahe`, `run_otsu`, los cinco `run_vpx_*` básicos y
-`_run_grayscale_method` (que sirve a los siete `gray_*`). Tampoco se prueba
-`main()`: ni el parseo de `argparse`, ni una sola flag, ni el guardado con
-`cv2.imwrite`, ni la creación de directorios, ni el mensaje
-`"Imagen procesada. No se guardó."`, ni `parser.error("--mask es obligatorio
-para vpx_reconstruct")`, ni `FileNotFoundError` cuando `cv2.imread` devuelve
-`None`.
 
 ### `preprocessing.py`: test puramente estructural
 
@@ -170,14 +180,13 @@ no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
 
 Si hay que elegir dónde poner el siguiente test, en este orden:
 
-1. `main()` del CLI con `monkeypatch` sobre `sys.argv` — 222 líneas casi sin
-   tocar, y es la superficie que usa la gente
-2. Invariantes con imágenes aleatorias y semilla fija — idempotencia y dualidad,
+1. Invariantes con imágenes aleatorias y semilla fija — idempotencia y dualidad,
    que el diferencial no verifica porque compara contra otra implementación, no
    contra una propiedad
-3. Las ramas de `validate_kernel` que faltan — baratas, una línea cada una
+2. Las ramas de `validate_kernel` que faltan — baratas, una línea cada una
 
-Hecho: el diferencial contra `morph_scipy.py`, y la cobertura de `utils.py`.
+Hecho: el diferencial contra `morph_scipy.py`, la cobertura de `utils.py` y la
+de `main()`.
 
 ## Ver también
 

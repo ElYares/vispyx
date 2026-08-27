@@ -1,5 +1,12 @@
 # Changelog
 
+## No publicado
+
+- `test/test_cli_main.py`: 30 tests sobre `main()`, que no tenia ninguno. Cubre
+  los 17 metodos de punta a punta, las flags, la creacion de directorios, los
+  codigos de salida y los errores de lectura
+- cobertura de 93 a 123 tests
+
 ## 0.3.0
 
 Un solo contrato para leer imagenes. **Cambio incompatible.**
