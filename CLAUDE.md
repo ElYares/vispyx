@@ -33,7 +33,7 @@ vispyx/
 
 ```bash
 pip install -e .[dev]
-pytest -q            # 49 tests, ~1.9 s
+pytest -q            # 78 tests, ~1.4 s
 vispyx --help
 ```
 
@@ -71,8 +71,10 @@ función `run_*`, y `docs/cli_reference.md`. Cierra con `CHANGELOG.md`.
   dilataciones*, no *n aperturas*
 - `vispyx.__version__` está clavado en un test: subir la versión sin actualizar
   `test_public_api.py` rompe la suite
-- `morph_scipy.py` (raíz) y `examples/demo.ipynb` (vacío, 0 bytes) son código
-  huérfano, fuera del paquete instalable
+- `examples/demo.ipynb` está vacío (0 bytes) desde el commit que lo introdujo
+- `morph_scipy.py` (raíz) está fuera del paquete instalable, pero
+  `test/test_reference_scipy.py` lo usa como oráculo de referencia. El
+  `conftest.py` de la raíz existe solo para que ese import funcione
 
 ## Documentación
 
