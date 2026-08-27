@@ -1,11 +1,23 @@
 # Changelog
 
-## No publicado
+## 0.3.0
 
+Un solo contrato para leer imagenes. **Cambio incompatible.**
+
+- `read_grayscale` deja de devolver `None` en silencio cuando falla la lectura.
+  Ahora lanza `FileNotFoundError` si no hay ningun archivo en la ruta, y
+  `ValueError` si el archivo existe pero no se puede decodificar. Antes los dos
+  casos eran indistinguibles
+- el CLI deja de tener su propio `_read_grayscale` y usa la funcion publica: el
+  error es identico se entre por Python o por linea de comandos
 - `examples/demo.ipynb` deja de estar vacio: notebook ejecutable con el pipeline
   completo paso a paso, la comparacion medida de que preprocesamiento resuelve
   el problema, las cuatro formas de kernel y la trampa de pasar grises a una
   `vpx_*`
+- cobertura de 84 a 93 tests
+
+Si tu codigo comprobaba `if img is None` despues de `read_grayscale`, esa rama
+ya no se alcanza: la excepcion salta antes. Se puede borrar.
 
 ## 0.2.1
 

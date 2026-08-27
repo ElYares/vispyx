@@ -29,7 +29,7 @@ Requiere Python `>= 3.7`. Dependencias declaradas: `opencv-python`, `numpy`,
 Verificar que quedó bien:
 
 ```bash
-python -c "import vispyx; print(vispyx.__version__)"   # 0.2.1
+python -c "import vispyx; print(vispyx.__version__)"   # 0.3.0
 vispyx --help
 pytest -q                                              # 49 passed
 ```
@@ -75,10 +75,8 @@ from vispyx import (
     segment_otsu, vpx_boundary, vpx_open, vpx_skeletonize,
 )
 
-# 1. leer  ─ read_grayscale devuelve None si falla, hay que comprobarlo
+# 1. leer  ─ lanza si el archivo no está o no se puede decodificar
 img = read_grayscale("archive/all-mias/mdb001.pgm")
-if img is None:
-    raise FileNotFoundError("no se pudo leer la imagen")
 
 # 2. realzar contraste local
 realzada = apply_clahe(img, clip_limit=3.0, tile_grid_size=(8, 8))
@@ -149,8 +147,6 @@ Recogidas del código, todas verificadas:
 - **`iterations=True` falla** con `ValueError`, a propósito: `bool` es subclase
   de `int`, pero pasar `True` es un error, no una petición de una iteración. Los
   enteros de NumPy (`np.int64(2)`) sí son válidos.
-- **`read_grayscale` devuelve `None` sin avisar** si el archivo no existe o no se
-  puede decodificar.
 - **`apply_clahe` acepta `title_grid_size`** (con typo) por compatibilidad, y si
   se pasa, sobrescribe a `tile_grid_size`. No lo uses en código nuevo.
 - **`vpx_reconstruct` exige `marker ⊆ mask`** punto a punto, o lanza
@@ -179,11 +175,13 @@ Todas las validaciones lanzan `ValueError` con mensajes estables. Los tests
 casan contra el texto literal, así que son contrato público — la tabla completa
 está en [api_reference.md](./api_reference.md#catálogo-de-errores).
 
-Las excepciones a esa regla, y por lo tanto lo que hay que envolver a mano:
+Dos excepciones a esa regla:
 
-- `read_grayscale` → `None` silencioso
+- `read_grayscale` lanza `FileNotFoundError` si no hay archivo y `ValueError` si
+  lo hay pero no se puede decodificar
 - `apply_clahe` y `segment_otsu` → `cv2.error` / excepciones de skimage sin
-  traducir
+  traducir. Son las únicas que llegan al llamador sin pasar por una validación
+  del paquete
 
 ## Ver también
 

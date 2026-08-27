@@ -1,7 +1,7 @@
 # vispyx
 
 Paquete Python de procesamiento de imágenes con un núcleo de morfología
-matemática **implementado desde cero**. Versión `0.2.1`, estado alpha.
+matemática **implementado desde cero**. Versión `0.3.0`, estado alpha.
 
 ## Regla que manda sobre todo
 
@@ -64,8 +64,8 @@ función `run_*`, y `docs/cli_reference.md`. Cierra con `CHANGELOG.md`.
 - `vpx_thin(img)` con el default hace **una pasada**, no el esqueleto completo
 - `iterations=True` es rechazado a propósito, aunque `bool` sea subclase de
   `int`. Los enteros de NumPy sí se aceptan
-- `read_grayscale` devuelve `None` en silencio si falla la lectura; el CLI usa
-  su propio `_read_grayscale`, que sí lanza
+- `read_grayscale` lanza: `FileNotFoundError` si no hay archivo, `ValueError` si
+  lo hay pero no se puede decodificar. El CLI usa esa misma función
 - `iterations=n` en `open`/`close` significa *n erosiones y luego n
   dilataciones*, no *n aperturas*
 - `vispyx.__version__` está clavado en un test: subir la versión sin actualizar

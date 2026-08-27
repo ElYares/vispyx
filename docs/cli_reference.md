@@ -80,8 +80,8 @@ correctamente el valor.
 
 ## Qué hace cada método
 
-Todas las rutas leen la imagen con `cv2.imread(path, 0)` (siempre escala de
-grises). Los métodos `vpx_*` además **rebinarizan** la entrada con
+Todas las rutas leen la imagen con `vispyx.utils.read_grayscale`, la misma
+función que usa la API pública (siempre escala de grises). Los métodos `vpx_*` además **rebinarizan** la entrada con
 `(img > 0) * 255`: cualquier píxel que no sea negro puro pasa a 255. Ojo: esa
 binarización **no usa Otsu**; si vienes de una imagen de grises, pasa primero
 por `vispyx otsu`.
@@ -147,7 +147,8 @@ Tkinter, `--show` falla.
 
 | Error | Origen |
 |---|---|
-| `FileNotFoundError: No se encontró la imagen en <ruta>` | `_read_grayscale`, cuando `cv2.imread` devuelve `None` (archivo ausente **o** ilegible/corrupto: ambos casos dan el mismo mensaje) |
+| `FileNotFoundError: No se encontró la imagen en <ruta>` | `read_grayscale`, cuando no hay ningún archivo en la ruta |
+| `ValueError: No se pudo decodificar la imagen en <ruta>` | `read_grayscale`, cuando el archivo existe pero no es una imagen legible |
 | `ValueError: --kernel-size debe ser un entero positivo` | `_build_kernel`, con `kernel_size <= 0` |
 | `ValueError: kernel dimensions must be odd` | `validate_kernel`, con `--kernel-size` **par**. El CLI no lo valida antes, el error aparece ya dentro de la operación morfológica |
 | `ValueError: iterations must be a positive integer` | `validate_iterations`, con `--iterations 0` o `--max-iterations 0` |

@@ -24,6 +24,7 @@ from vispyx.morphology import (
 )
 from vispyx.preprocessing import apply_clahe
 from vispyx.segmentation import segment_otsu
+from vispyx.utils import read_grayscale
 
 matplotlib.use("TkAgg")  # Forzar backend seguro y visualizable
 import matplotlib.pyplot as plt
@@ -39,13 +40,6 @@ def show_image(image, title="Resultado"):
     plt.show()
 
 
-def _read_grayscale(image_path):
-    img = cv2.imread(image_path, 0)
-    if img is None:
-        raise FileNotFoundError(f"No se encontró la imagen en {image_path}")
-    return img
-
-
 def _build_kernel(kernel_size):
     if kernel_size <= 0:
         raise ValueError("--kernel-size debe ser un entero positivo")
@@ -53,53 +47,53 @@ def _build_kernel(kernel_size):
 
 
 def run_clahe(image_path, clip_limit=2.0, grid=8):
-    img = _read_grayscale(image_path)
+    img = read_grayscale(image_path)
     return apply_clahe(img, clip_limit=clip_limit, tile_grid_size=(grid, grid))
 
 
 def run_otsu(image_path):
-    img = _read_grayscale(image_path)
+    img = read_grayscale(image_path)
     return segment_otsu(img)
 
 
 def run_vpx_erode(image_path, kernel_size=3, iterations=1):
-    img = _read_grayscale(image_path)
+    img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
     kernel = _build_kernel(kernel_size)
     return vpx_erode(binary, kernel, iterations)
 
 
 def run_vpx_dilate(image_path, kernel_size=3, iterations=1):
-    img = _read_grayscale(image_path)
+    img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
     kernel = _build_kernel(kernel_size)
     return vpx_dilate(binary, kernel, iterations)
 
 
 def run_vpx_open(image_path, kernel_size=3, iterations=1):
-    img = _read_grayscale(image_path)
+    img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
     kernel = _build_kernel(kernel_size)
     return vpx_open(binary, kernel, iterations)
 
 
 def run_vpx_close(image_path, kernel_size=3, iterations=1):
-    img = _read_grayscale(image_path)
+    img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
     kernel = _build_kernel(kernel_size)
     return vpx_close(binary, kernel, iterations)
 
 
 def run_vpx_gradient(image_path, kernel_size=3, iterations=1):
-    img = _read_grayscale(image_path)
+    img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
     kernel = _build_kernel(kernel_size)
     return vpx_gradient(binary, kernel, iterations)
 
 
 def run_vpx_reconstruct(marker_path, mask_path, kernel_size=3, max_iterations=None):
-    marker = _read_grayscale(marker_path)
-    mask = _read_grayscale(mask_path)
+    marker = read_grayscale(marker_path)
+    mask = read_grayscale(mask_path)
     marker = (marker > 0).astype(np.uint8) * 255
     mask = (mask > 0).astype(np.uint8) * 255
     kernel = _build_kernel(kernel_size)
@@ -107,19 +101,19 @@ def run_vpx_reconstruct(marker_path, mask_path, kernel_size=3, max_iterations=No
 
 
 def run_vpx_skeletonize(image_path, max_iterations=None):
-    img = _read_grayscale(image_path)
+    img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
     return vpx_skeletonize(binary, max_iterations=max_iterations)
 
 
 def run_vpx_thin(image_path, iterations=1):
-    img = _read_grayscale(image_path)
+    img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
     return vpx_thin(binary, iterations=iterations)
 
 
 def _run_grayscale_method(image_path, method, kernel_size=3, iterations=1):
-    img = _read_grayscale(image_path)
+    img = read_grayscale(image_path)
     kernel = _build_kernel(kernel_size)
     return method(img, kernel, iterations)
 

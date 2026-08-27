@@ -35,7 +35,7 @@ def test_public_api_exposes_expected_symbols():
     }
 
     assert expected_symbols.issubset(set(vispyx.__all__))
-    assert vispyx.__version__ == "0.2.1"
+    assert vispyx.__version__ == "0.3.0"
 
 
 def test_public_api_kernel_and_morphology_work_together():

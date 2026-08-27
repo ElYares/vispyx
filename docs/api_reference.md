@@ -1,6 +1,6 @@
 # API Reference
 
-Referencia de la API pública de `vispyx` (`0.2.1`). Todo lo listado aquí se
+Referencia de la API pública de `vispyx` (`0.3.0`). Todo lo listado aquí se
 importa directamente desde el paquete raíz:
 
 ```python
@@ -172,17 +172,26 @@ convención 0/255 que ese bloque espera.
 
 ### `read_grayscale(path)`
 
-`cv2.imread(path, cv2.IMREAD_GRAYSCALE)` sin más. **Si el archivo no existe o no
-es decodificable devuelve `None` en silencio**, no lanza excepción. Hay que
-comprobarlo en el llamador:
+Lee una imagen y la devuelve en escala de grises: `np.ndarray` 2D `uint8`.
 
 ```python
-img = read_grayscale(path)
-if img is None:
-    raise FileNotFoundError(path)
+img = read_grayscale(path)     # y ya: si vuelve, es una imagen
 ```
 
-El CLI no usa esta función: tiene su propio `_read_grayscale` que sí valida.
+`cv2.imread` no lanza cuando falla — devuelve `None` tanto si el archivo no
+existe como si existe y no se puede decodificar. `read_grayscale` traduce esos
+dos casos a excepciones distintas:
+
+| Situación | Error |
+|---|---|
+| no hay nada en `path` | `FileNotFoundError: No se encontró la imagen en {path}` |
+| el archivo existe pero no es una imagen legible | `ValueError: No se pudo decodificar la imagen en {path}` |
+
+Distinguirlos importa: un `FileNotFoundError` sobre un archivo que sí está te
+manda a revisar una ruta que estaba bien.
+
+**El CLI usa esta misma función**, así que el error es idéntico se entre por
+Python o por la línea de comandos.
 
 ### `show_image(image, title="Imagen", cmap="gray")`
 
@@ -241,8 +250,6 @@ from vispyx import (
 )
 
 img = read_grayscale("archive/all-mias/mdb001.pgm")
-if img is None:
-    raise FileNotFoundError("no se pudo leer la imagen")
 
 realzada = apply_clahe(img, clip_limit=3.0, tile_grid_size=(8, 8))
 suave    = gray_close(realzada, kernel=kernel_disk(1))
