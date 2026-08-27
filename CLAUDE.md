@@ -33,7 +33,7 @@ vispyx/
 
 ```bash
 pip install -e .[dev]
-pytest -q            # 84 tests, ~1.6 s
+pytest -q            # 123 tests, ~1.4 s
 vispyx --help
 ```
 
