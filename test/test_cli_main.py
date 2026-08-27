@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from vispyx import cli
+from vispyx.kernels import kernel_cross, kernel_diamond, kernel_disk, kernel_square
 
 METODOS = [
     "clahe",
@@ -122,8 +123,13 @@ def test_metodo_desconocido_sale_con_codigo_2(imagen, monkeypatch, capsys):
 
 
 def test_kernel_par_es_rechazado(imagen, monkeypatch):
-    """El CLI no valida la paridad: el error viene de la capa morfologica."""
-    with pytest.raises(ValueError, match="kernel dimensions must be odd"):
+    """Desde ``--kernel-shape`` la paridad la valida ``kernels.py``.
+
+    Antes el error salia de ``validate_kernel``, ya dentro de la operacion y
+    despues de leer la imagen: ``kernel dimensions must be odd``. Ahora
+    ``_build_kernel`` delega en los generadores y falla antes de leer nada.
+    """
+    with pytest.raises(ValueError, match="size must be odd"):
         _correr(monkeypatch, ["vpx_erode", imagen, "--kernel-size", "4"])
 
 
@@ -197,3 +203,134 @@ def test_gray_no_binariza_la_entrada(imagen, tmp_path, monkeypatch):
 
     resultado = cv2.imread(salida, cv2.IMREAD_GRAYSCALE)
     assert 200 in np.unique(resultado)
+
+
+# --- forma del kernel (--kernel-shape) ---------------------------------------
+#
+# Las formas coinciden entre si para radios chicos, asi que el tamano del test
+# decide que puede distinguir:
+#
+#   size=3  cross == diamond == disk  ->  no distingue nada
+#   size=5  diamond == disk           ->  separa cross, no separa diamond/disk
+#   size=7  las cuatro difieren       ->  el unico que las separa a todas
+#
+# Por eso el caso base va con 5 y la separacion completa con 7.
+
+
+def _kernel_usado(monkeypatch, argumentos):
+    """Corre el CLI y devuelve el kernel que realmente llego a la operacion."""
+    capturado = {}
+
+    def espia(imagen, kernel, iterations):
+        capturado["kernel"] = kernel
+        return imagen
+
+    monkeypatch.setattr(cli, "vpx_erode", espia)
+    _correr(monkeypatch, argumentos)
+    return capturado["kernel"]
+
+
+def test_kernel_shape_omitido_construye_el_cuadrado_de_siempre(imagen, monkeypatch):
+    kernel = _kernel_usado(monkeypatch, ["vpx_erode", imagen, "--kernel-size", "5"])
+
+    np.testing.assert_array_equal(kernel, np.ones((5, 5), dtype=np.uint8))
+
+
+@pytest.mark.parametrize(
+    "forma, esperado",
+    [
+        ("square", kernel_square(5)),
+        ("cross", kernel_cross(5)),
+        ("diamond", kernel_diamond(5)),
+        ("disk", kernel_disk(2)),
+    ],
+)
+def test_cada_forma_construye_su_generador(forma, esperado, imagen, monkeypatch):
+    kernel = _kernel_usado(
+        monkeypatch,
+        ["vpx_erode", imagen, "--kernel-size", "5", "--kernel-shape", forma],
+    )
+
+    np.testing.assert_array_equal(kernel, esperado)
+
+
+def test_diamante_y_disco_no_son_la_misma_forma(imagen, monkeypatch):
+    """Con ``size=5`` coinciden; recien en 7 se separan.
+
+    Sin este caso, cambiar la rama ``diamond`` por ``kernel_disk(size // 2)``
+    pasa el resto de la suite sin una sola falla.
+    """
+    diamante = _kernel_usado(
+        monkeypatch,
+        ["vpx_erode", imagen, "--kernel-size", "7", "--kernel-shape", "diamond"],
+    )
+    disco = _kernel_usado(
+        monkeypatch,
+        ["vpx_erode", imagen, "--kernel-size", "7", "--kernel-shape", "disk"],
+    )
+
+    np.testing.assert_array_equal(diamante, kernel_diamond(7))
+    np.testing.assert_array_equal(disco, kernel_disk(3))
+    assert not np.array_equal(diamante, disco)
+
+
+def test_el_disco_deriva_el_radio_del_tamano(imagen, monkeypatch):
+    """``--kernel-size 5`` es ``kernel_disk(2)``: radio = size // 2, lado 5."""
+    kernel = _kernel_usado(
+        monkeypatch,
+        ["vpx_erode", imagen, "--kernel-size", "5", "--kernel-shape", "disk"],
+    )
+
+    assert kernel.shape == (5, 5)
+
+
+def test_la_forma_llega_a_los_gray(tmp_path, monkeypatch):
+    """La flag no es solo de los ``vpx_*``: los ``gray_*`` tambien la reciben.
+
+    El fixture ``imagen`` no sirve aca: sobre un bloque cuadrado solido las
+    cuatro formas erosionan identico. Con un unico pixel oscuro, el cuadrado
+    lo propaga a sus 25 vecinos y la cruz solo a 9.
+    """
+    datos = np.full((16, 16), 200, dtype=np.uint8)
+    datos[8, 8] = 0
+    entrada = str(tmp_path / "punto.pgm")
+    cv2.imwrite(entrada, datos)
+
+    oscuros = {}
+    for forma in ("square", "cross"):
+        salida = str(tmp_path / f"{forma}.pgm")
+        _correr(
+            monkeypatch,
+            ["gray_erode", entrada, "--kernel-size", "5", "--kernel-shape", forma, "-o", salida],
+        )
+        oscuros[forma] = int((cv2.imread(salida, cv2.IMREAD_GRAYSCALE) == 0).sum())
+
+    assert oscuros["square"] == 25
+    assert oscuros["cross"] == 9
+
+
+@pytest.mark.parametrize("forma", ["square", "cross", "diamond", "disk"])
+def test_ninguna_forma_acepta_un_tamano_par(forma, imagen, monkeypatch):
+    """El disco tambien: sin la validacion, size=4 daria el mismo disco que 5."""
+    with pytest.raises(ValueError, match="size must be odd"):
+        _correr(
+            monkeypatch,
+            ["vpx_erode", imagen, "--kernel-size", "4", "--kernel-shape", forma],
+        )
+
+
+def test_forma_desconocida_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as salida:
+        _correr(
+            monkeypatch,
+            ["vpx_erode", imagen, "--kernel-shape", "triangulo"],
+        )
+
+    assert salida.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_build_kernel_rechaza_una_forma_que_el_parser_no_filtro():
+    """``_build_kernel`` es API interna: no puede confiar en el ``choices``."""
+    with pytest.raises(ValueError, match="Forma de kernel no reconocida: triangulo"):
+        cli._build_kernel(5, "triangulo")

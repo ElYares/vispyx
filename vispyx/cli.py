@@ -5,6 +5,13 @@ import cv2
 import matplotlib
 import numpy as np
 
+from vispyx.kernels import (
+    _validate_size,
+    kernel_cross,
+    kernel_diamond,
+    kernel_disk,
+    kernel_square,
+)
 from vispyx.morphology import (
     gray_blackhat,
     gray_close,
@@ -40,10 +47,26 @@ def show_image(image, title="Resultado"):
     plt.show()
 
 
-def _build_kernel(kernel_size):
+KERNEL_SHAPES = ["square", "cross", "diamond", "disk"]
+
+
+def _build_kernel(kernel_size, kernel_shape="square"):
     if kernel_size <= 0:
         raise ValueError("--kernel-size debe ser un entero positivo")
-    return np.ones((kernel_size, kernel_size), dtype=np.uint8)
+    if kernel_shape == "square":
+        return kernel_square(kernel_size)
+    elif kernel_shape == "cross":
+        return kernel_cross(kernel_size)
+    elif kernel_shape == "diamond":
+        return kernel_diamond(kernel_size)
+    elif kernel_shape == "disk":
+        # kernel_disk toma radio, no lado. La paridad se valida aparte: sin
+        # esto, size=4 daria radio 2 y el mismo disco 5x5 que size=5, en
+        # silencio, mientras las otras tres formas rechazan el 4.
+        _validate_size(kernel_size)
+        return kernel_disk(kernel_size // 2)
+    else:
+        raise ValueError(f"Forma de kernel no reconocida: {kernel_shape}")
 
 
 def run_clahe(image_path, clip_limit=2.0, grid=8):
@@ -56,47 +79,47 @@ def run_otsu(image_path):
     return segment_otsu(img)
 
 
-def run_vpx_erode(image_path, kernel_size=3, iterations=1):
+def run_vpx_erode(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
     img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size)
+    kernel = _build_kernel(kernel_size, kernel_shape)
     return vpx_erode(binary, kernel, iterations)
 
 
-def run_vpx_dilate(image_path, kernel_size=3, iterations=1):
+def run_vpx_dilate(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
     img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size)
+    kernel = _build_kernel(kernel_size, kernel_shape)
     return vpx_dilate(binary, kernel, iterations)
 
 
-def run_vpx_open(image_path, kernel_size=3, iterations=1):
+def run_vpx_open(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
     img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size)
+    kernel = _build_kernel(kernel_size, kernel_shape)
     return vpx_open(binary, kernel, iterations)
 
 
-def run_vpx_close(image_path, kernel_size=3, iterations=1):
+def run_vpx_close(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
     img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size)
+    kernel = _build_kernel(kernel_size, kernel_shape)
     return vpx_close(binary, kernel, iterations)
 
 
-def run_vpx_gradient(image_path, kernel_size=3, iterations=1):
+def run_vpx_gradient(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
     img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size)
+    kernel = _build_kernel(kernel_size, kernel_shape)
     return vpx_gradient(binary, kernel, iterations)
 
 
-def run_vpx_reconstruct(marker_path, mask_path, kernel_size=3, max_iterations=None):
+def run_vpx_reconstruct(marker_path, mask_path, kernel_size=3, max_iterations=None, kernel_shape="square"):
     marker = read_grayscale(marker_path)
     mask = read_grayscale(mask_path)
     marker = (marker > 0).astype(np.uint8) * 255
     mask = (mask > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size)
+    kernel = _build_kernel(kernel_size, kernel_shape)
     return vpx_reconstruct(marker, mask, kernel=kernel, max_iterations=max_iterations)
 
 
@@ -112,9 +135,9 @@ def run_vpx_thin(image_path, iterations=1):
     return vpx_thin(binary, iterations=iterations)
 
 
-def _run_grayscale_method(image_path, method, kernel_size=3, iterations=1):
+def _run_grayscale_method(image_path, method, kernel_size=3, iterations=1, kernel_shape="square"):
     img = read_grayscale(image_path)
-    kernel = _build_kernel(kernel_size)
+    kernel = _build_kernel(kernel_size, kernel_shape)
     return method(img, kernel, iterations)
 
 
@@ -153,6 +176,12 @@ def main():
     parser.add_argument("--grid", type=int, default=8, help="Tamaño de cuadrícula para CLAHE")
     parser.add_argument("--kernel-size", type=int, default=3, help="Tamaño del kernel (3, 5, 7...)")
     parser.add_argument("--kernel", dest="kernel_size", type=int, help="Alias de --kernel-size")
+    parser.add_argument(
+        "--kernel-shape",
+        choices=KERNEL_SHAPES,
+        default="square",
+        help="Forma del elemento estructurante (para disk, el radio es --kernel-size // 2)",
+    )
     parser.add_argument("--iterations", type=int, default=1, help="Número de iteraciones")
     parser.add_argument("--max-iterations", type=int, default=None, help="Máximo de iteraciones para reconstruccion binaria")
 
@@ -163,15 +192,15 @@ def main():
     elif args.method == "otsu":
         result = run_otsu(args.image_path)
     elif args.method == "vpx_erode":
-        result = run_vpx_erode(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = run_vpx_erode(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_dilate":
-        result = run_vpx_dilate(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = run_vpx_dilate(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_open":
-        result = run_vpx_open(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = run_vpx_open(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_close":
-        result = run_vpx_close(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = run_vpx_close(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_gradient":
-        result = run_vpx_gradient(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = run_vpx_gradient(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_reconstruct":
         if not args.mask_path:
             parser.error("--mask es obligatorio para vpx_reconstruct")
@@ -180,25 +209,26 @@ def main():
             args.mask_path,
             kernel_size=args.kernel_size,
             max_iterations=args.max_iterations,
+            kernel_shape=args.kernel_shape,
         )
     elif args.method == "vpx_skeletonize":
         result = run_vpx_skeletonize(args.image_path, max_iterations=args.max_iterations)
     elif args.method == "vpx_thin":
         result = run_vpx_thin(args.image_path, iterations=args.iterations)
     elif args.method == "gray_erode":
-        result = _run_grayscale_method(args.image_path, gray_erode, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = _run_grayscale_method(args.image_path, gray_erode, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "gray_dilate":
-        result = _run_grayscale_method(args.image_path, gray_dilate, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = _run_grayscale_method(args.image_path, gray_dilate, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "gray_open":
-        result = _run_grayscale_method(args.image_path, gray_open, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = _run_grayscale_method(args.image_path, gray_open, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "gray_close":
-        result = _run_grayscale_method(args.image_path, gray_close, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = _run_grayscale_method(args.image_path, gray_close, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "gray_gradient":
-        result = _run_grayscale_method(args.image_path, gray_gradient, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = _run_grayscale_method(args.image_path, gray_gradient, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "gray_tophat":
-        result = _run_grayscale_method(args.image_path, gray_tophat, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = _run_grayscale_method(args.image_path, gray_tophat, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "gray_blackhat":
-        result = _run_grayscale_method(args.image_path, gray_blackhat, kernel_size=args.kernel_size, iterations=args.iterations)
+        result = _run_grayscale_method(args.image_path, gray_blackhat, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     else:
         raise ValueError(f"Método no reconocido: {args.method}")
 

@@ -125,11 +125,15 @@ Cosas reales del código, no hipótesis:
    para validar las operaciones binarias. `scipy` está declarado en el extra
    `dev`. Cubre erode, dilate, open, close y gradient; el resto de las
    operaciones sigue sin oráculo — ver [testing.md](./testing.md).
-3. **El CLI no expone los generadores de kernels.** Construye siempre
-   `np.ones((n, n))`; `kernel_cross`, `kernel_diamond` y `kernel_disk` solo son
-   alcanzables desde Python.
-4. **Cuatro operaciones binarias no están en el CLI**: `vpx_tophat`,
+3. **Cuatro operaciones binarias no están en el CLI**: `vpx_tophat`,
    `vpx_blackhat`, `vpx_boundary` y `vpx_hitmiss`.
+4. **El CLI sigue sin poder expresar kernels no cuadrados** (`3×5`). La API los
+   acepta; `--kernel-shape` solo cubre las cuatro formas de lado impar. No hay
+   una forma razonable de escribirlo como flag, así que está asumido, no
+   pendiente.
+
+Resuelto: el CLI ya no construye siempre `np.ones((n, n))`. `--kernel-shape`
+expone los cuatro generadores de `kernels.py`.
 
 ## Cómo agregar una operación
 

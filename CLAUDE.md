@@ -33,7 +33,7 @@ vispyx/
 
 ```bash
 pip install -e .[dev]
-pytest -q            # 123 tests, ~1.4 s
+pytest -q            # 137 tests, ~1.4 s
 vispyx --help
 ```
 
@@ -62,6 +62,13 @@ función `run_*`, y `docs/cli_reference.md`. Cierra con `CHANGELOG.md`.
 ## Trampas conocidas
 
 - `vpx_thin(img)` con el default hace **una pasada**, no el esqueleto completo
+- **Las cuatro formas de kernel coinciden entre sí para radios chicos**: en `3`
+  cruz, diamante y disco son la misma matriz; en `5` lo son diamante y disco.
+  Un test de forma escrito con `5` deja pasar que esas dos ramas estén
+  cambiadas. Para separar las cuatro hace falta `7`
+- `--kernel-shape disk` deriva el radio como `size // 2`, porque `kernel_disk`
+  toma radio y no lado. La paridad se valida aparte en `cli.py`: sin eso, un `4`
+  daría el mismo disco que un `5` en silencio
 - `iterations=True` es rechazado a propósito, aunque `bool` sea subclase de
   `int`. Los enteros de NumPy sí se aceptan
 - `read_grayscale` lanza: `FileNotFoundError` si no hay archivo, `ValueError` si
