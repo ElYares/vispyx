@@ -134,12 +134,11 @@ Cosas reales del código, no hipótesis:
    `FileNotFoundError`. Dos lectores con contratos distintos para lo mismo.
 5. **`cli.py` no comprueba el retorno de `cv2.imwrite`**: puede imprimir
    "Imagen guardada" sin haber guardado nada.
-6. **`morph_scipy.py` es código huérfano.** Implementa las mismas operaciones
-   binarias con `scipy.ndimage` y nadie lo importa: ni el paquete, ni los tests,
-   ni la documentación. `scipy` ni siquiera está declarado como dependencia
-   (llega de refilón por scikit-image). Es el oráculo de referencia natural para
-   validar la implementación propia y no se está usando — ver
-   [testing.md](./testing.md).
+6. **`morph_scipy.py` sigue fuera del paquete instalable**, pero ya no es código
+   huérfano: `test/test_reference_scipy.py` lo usa como oráculo de referencia
+   para validar las operaciones binarias. `scipy` está declarado en el extra
+   `dev`. Cubre erode, dilate, open, close y gradient; el resto de las
+   operaciones sigue sin oráculo — ver [testing.md](./testing.md).
 7. **`examples/demo.ipynb` está vacío** (0 bytes) desde el commit que lo
    introdujo. El README no lo menciona, pero el directorio `examples/` sugiere
    contenido que no existe.

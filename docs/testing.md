@@ -9,11 +9,12 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **49 tests, 49 pasan, ~1.9 s** (Python 3.14.5, numpy 2.5.2,
-OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1).
+Estado verificado: **78 tests, 78 pasan, ~1.4 s** (Python 3.14.5, numpy 2.5.2,
+OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1, scipy 1.16).
 
-No hay `conftest.py` ni configuración de pytest más allá de declarar `pytest`
-en `[project.optional-dependencies].dev`.
+Hay un `conftest.py` vacío en la raíz: existe solo para poner el directorio del
+repo en `sys.path`, y así permitir que `test_reference_scipy.py` importe
+`morph_scipy`, que vive fuera del paquete instalable.
 
 Si `pytest` falla con `ModuleNotFoundError`, casi siempre es el entorno y no el
 código: `test_cli.py` y `test_preprocessing.py` importan `cv2` a nivel de
@@ -28,13 +29,15 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | tres funciones `run_*` con I/O real en disco |
+| `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
 | `test_preprocessing.py` | 2 | shape y tipo de `apply_clahe`, nada más |
 
 ## Qué se verifica de verdad
 
-La estrategia es **valor exacto sobre matrices chicas hechas a mano**, comparadas
-con `assert_array_equal` contra un resultado escrito a mano. No hay
-property-based testing ni comparación contra implementaciones de referencia.
+La estrategia principal es **valor exacto sobre matrices chicas hechas a mano**,
+comparadas con `assert_array_equal` contra un resultado escrito a mano. No hay
+property-based testing. Sí hay, desde `test_reference_scipy.py`, comparación
+contra una implementación de referencia.
 
 Lo que sí queda amarrado:
 
@@ -124,20 +127,41 @@ solo como casos puntuales:
 Son exactamente el tipo de invariante que se verifica bien con imágenes
 aleatorias y semilla fija, y hoy no hay ninguno.
 
-### El oráculo que no se usa
+### Lo que el diferencial contra SciPy ya cubre
 
-`morph_scipy.py` implementa `erode`, `dilate`, `open`, `close` y `gradient`
-binarios sobre `scipy.ndimage`, con la misma semántica de kernel e iteraciones
-que `vispyx`. **Ningún test lo importa.** Es la validación cruzada obvia para un
-paquete cuyo argumento de venta es "implementado desde cero": comparar la
-implementación propia contra una de referencia establecida. Hoy esa comparación
-no existe en ninguna forma — tampoco contra `cv2.morphologyEx` ni contra
-`skimage.morphology`.
+`test_reference_scipy.py` compara `vpx_erode`, `vpx_dilate`, `vpx_open`,
+`vpx_close` y `vpx_gradient` contra `morph_scipy.MorphologicalProcessor`, que
+implementa las mismas operaciones sobre `scipy.ndimage` con idéntica semántica
+de kernel e iteraciones. Cubre kernels 3×3 y 5×5, de una a tres iteraciones, y
+densidades de 0.2 a 0.8.
 
-Con una diferencia a tener en cuenta si se hace: el `gradient` de
-`morph_scipy.py` re-binariza los resultados de `dilate`/`erode` antes de restar,
-mientras que `vpx_gradient` resta en `int16` sobre 0/255. Para entradas binarias
-el resultado coincide, pero los pasos intermedios no son idénticos.
+**Por qué vale**: una mutación que debilita la erosión — cambiar
+`np.sum(region) == active_count` por `>= active_count - 1` — deja pasar los 49
+tests originales **sin una sola falla** y rompe 11 de los nuevos. Era exactamente
+el hueco: los tests de valor exacto verifican casos elegidos a mano, y una
+implementación sutilmente incorrecta puede acertar en todos ellos.
+
+Dos cosas que el diferencial no puede hacer directamente, y cómo están
+resueltas:
+
+- **El borde diverge a propósito.** `vispyx` rellena por reflejo y
+  `scipy.ndimage` trata el exterior como fondo. Las comparaciones corren sobre
+  imágenes rodeadas de un marco de fondo de ancho
+  `(kernel_size // 2) * iterations * 2`, suficiente para que la operación nunca
+  alcance el borde. La divergencia en sí está cubierta aparte, en
+  `test_border_handling_differs_on_purpose`.
+- **El `gradient` de `morph_scipy.py` re-binariza** los resultados de
+  `dilate`/`erode` antes de restar, mientras que `vpx_gradient` resta en `int16`
+  sobre 0/255. La comparación se hace sobre máscaras normalizadas a 0/1.
+
+`scipy` está declarado en el extra `dev`, y el archivo empieza con
+`pytest.importorskip("scipy")`: sin scipy, esos 29 tests se saltan en vez de
+romper la suite.
+
+Sigue sin haber comparación contra `cv2.morphologyEx` ni contra
+`skimage.morphology`. Las operaciones sin oráculo son las que `morph_scipy.py`
+no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
+`skeletonize`, `thin` y todo el bloque `gray_*`.
 
 ## Prioridad sugerida
 
@@ -147,9 +171,12 @@ Si hay que elegir dónde poner el siguiente test, en este orden:
    la primera línea de cualquier pipeline
 2. `main()` del CLI con `monkeypatch` sobre `sys.argv` — 222 líneas casi sin
    tocar, y es la superficie que usa la gente
-3. Diferencial contra `morph_scipy.py` — el oráculo ya está escrito
-4. Invariantes con imágenes aleatorias y semilla fija — idempotencia y dualidad
-5. Las ramas de `validate_kernel` que faltan — baratas, una línea cada una
+3. Invariantes con imágenes aleatorias y semilla fija — idempotencia y dualidad,
+   que el diferencial no verifica porque compara contra otra implementación, no
+   contra una propiedad
+4. Las ramas de `validate_kernel` que faltan — baratas, una línea cada una
+
+Hecho: el diferencial contra `morph_scipy.py`.
 
 ## Ver también
 
