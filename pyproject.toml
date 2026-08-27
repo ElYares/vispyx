@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vispyx"
-version = "0.2.1"
+version = "0.3.0"
 description = "Technical image processing package with a morphology core implemented from scratch."
 readme = "README.md"
 requires-python = ">=3.7"

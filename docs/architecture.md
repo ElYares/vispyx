@@ -118,20 +118,17 @@ suite. La tabla completa está en
 
 Cosas reales del código, no hipótesis:
 
-1. **`read_grayscale` devuelve `None` en silencio** cuando falla la lectura,
-   mientras que el CLI tiene su propio `_read_grayscale` que sí lanza
-   `FileNotFoundError`. Dos lectores con contratos distintos para lo mismo.
-2. **`cli.py` no comprueba el retorno de `cv2.imwrite`**: puede imprimir
+1. **`cli.py` no comprueba el retorno de `cv2.imwrite`**: puede imprimir
    "Imagen guardada" sin haber guardado nada.
-3. **`morph_scipy.py` sigue fuera del paquete instalable**, pero ya no es código
+2. **`morph_scipy.py` sigue fuera del paquete instalable**, pero ya no es código
    huérfano: `test/test_reference_scipy.py` lo usa como oráculo de referencia
    para validar las operaciones binarias. `scipy` está declarado en el extra
    `dev`. Cubre erode, dilate, open, close y gradient; el resto de las
    operaciones sigue sin oráculo — ver [testing.md](./testing.md).
-4. **El CLI no expone los generadores de kernels.** Construye siempre
+3. **El CLI no expone los generadores de kernels.** Construye siempre
    `np.ones((n, n))`; `kernel_cross`, `kernel_diamond` y `kernel_disk` solo son
    alcanzables desde Python.
-5. **Cuatro operaciones binarias no están en el CLI**: `vpx_tophat`,
+4. **Cuatro operaciones binarias no están en el CLI**: `vpx_tophat`,
    `vpx_blackhat`, `vpx_boundary` y `vpx_hitmiss`.
 
 ## Cómo agregar una operación

@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **84 tests, 84 pasan, ~1.6 s** (Python 3.14.5, numpy 2.5.2,
+Estado verificado: **93 tests, 93 pasan, ~1.2 s** (Python 3.14.5, numpy 2.5.2,
 OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1, scipy 1.16).
 
 Hay un `conftest.py` vacío en la raíz: existe solo para poner el directorio del
@@ -29,7 +29,8 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | tres funciones `run_*` con I/O real en disco |
-| `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
+| `test_reference_scipy.py` | 29 |
+| `test_utils.py` | 9 | el lector de imágenes y `show_image` | diferencial contra la implementación de referencia en SciPy |
 | `test_preprocessing.py` | 2 | shape y tipo de `apply_clahe`, nada más |
 
 ## Qué se verifica de verdad
@@ -66,7 +67,7 @@ Lo que sí queda amarrado:
 - Toda entrada inválida produce `ValueError`, nunca `TypeError` ni `assert`.
 - `vispyx.morphology` debe seguir funcionando como import path: los tests del
   núcleo importan desde la fachada, no desde `morphology_binary`.
-- `vispyx.__version__ == "0.2.1"` está clavado en un test: **subir la versión
+- `vispyx.__version__ == "0.3.0"` está clavado en un test: **subir la versión
   rompe la suite si no se actualiza también ahí**.
 
 ## Huecos de cobertura
@@ -77,9 +78,9 @@ Reales, verificados leyendo la suite completa.
 
 - **`segmentation.py`**: `segment_otsu` solo aparece nombrada dentro del set
   `expected_symbols`. Nunca se invoca. Ni umbral, ni binarizado, ni dtype.
-- **`utils.py`**: `read_grayscale` y `show_image`, igual — mencionadas, nunca
-  ejecutadas. En particular no se prueba que `read_grayscale` devuelva `None`
-  ante un archivo inexistente, que es su comportamiento más peligroso.
+`utils.py` dejó de estar en esta lista: `test_utils.py` cubre las dos funciones,
+incluida la distinción entre archivo ausente e ilegible, y que el CLI use ese
+mismo lector.
 
 ### `cli.py`: 3 de 17 métodos
 
@@ -169,16 +170,14 @@ no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
 
 Si hay que elegir dónde poner el siguiente test, en este orden:
 
-1. `segment_otsu` y `read_grayscale` — cero cobertura en funciones que están en
-   la primera línea de cualquier pipeline
-2. `main()` del CLI con `monkeypatch` sobre `sys.argv` — 222 líneas casi sin
+1. `main()` del CLI con `monkeypatch` sobre `sys.argv` — 222 líneas casi sin
    tocar, y es la superficie que usa la gente
-3. Invariantes con imágenes aleatorias y semilla fija — idempotencia y dualidad,
+2. Invariantes con imágenes aleatorias y semilla fija — idempotencia y dualidad,
    que el diferencial no verifica porque compara contra otra implementación, no
    contra una propiedad
-4. Las ramas de `validate_kernel` que faltan — baratas, una línea cada una
+3. Las ramas de `validate_kernel` que faltan — baratas, una línea cada una
 
-Hecho: el diferencial contra `morph_scipy.py`.
+Hecho: el diferencial contra `morph_scipy.py`, y la cobertura de `utils.py`.
 
 ## Ver también
 

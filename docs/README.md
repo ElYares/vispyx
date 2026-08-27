@@ -1,6 +1,6 @@
 # Documentación de vispyx
 
-Índice de la documentación interna. `vispyx` `0.2.1`.
+Índice de la documentación interna. `vispyx` `0.3.0`.
 
 ## Para usar el paquete
 
