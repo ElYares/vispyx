@@ -1,7 +1,7 @@
 # vispyx
 
 Paquete Python de procesamiento de imágenes con un núcleo de morfología
-matemática **implementado desde cero**. Versión `0.2.0`, estado alpha.
+matemática **implementado desde cero**. Versión `0.2.1`, estado alpha.
 
 ## Regla que manda sobre todo
 
@@ -33,7 +33,7 @@ vispyx/
 
 ```bash
 pip install -e .[dev]
-pytest -q            # 78 tests, ~1.4 s
+pytest -q            # 84 tests, ~1.6 s
 vispyx --help
 ```
 
@@ -62,9 +62,8 @@ función `run_*`, y `docs/cli_reference.md`. Cierra con `CHANGELOG.md`.
 ## Trampas conocidas
 
 - `vpx_thin(img)` con el default hace **una pasada**, no el esqueleto completo
-- `iterations=np.int64(2)` es rechazado; `isinstance(np.int64(2), int)` es
-  `False`. `iterations=True` en cambio pasa, porque `bool` sí es `int`
-- las `gray_*` con listas de Python lanzan `AttributeError`, no `ValueError`
+- `iterations=True` es rechazado a propósito, aunque `bool` sea subclase de
+  `int`. Los enteros de NumPy sí se aceptan
 - `read_grayscale` devuelve `None` en silencio si falla la lectura; el CLI usa
   su propio `_read_grayscale`, que sí lanza
 - `iterations=n` en `open`/`close` significa *n erosiones y luego n

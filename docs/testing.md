@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **78 tests, 78 pasan, ~1.4 s** (Python 3.14.5, numpy 2.5.2,
+Estado verificado: **84 tests, 84 pasan, ~1.6 s** (Python 3.14.5, numpy 2.5.2,
 OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1, scipy 1.16).
 
 Hay un `conftest.py` vacío en la raíz: existe solo para poner el directorio del
@@ -25,7 +25,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 
 | Archivo | Tests | Qué fija |
 |---|---|---|
-| `test_morphology.py` | 30 | el núcleo algorítmico, binario y grayscale |
+| `test_morphology.py` | 36 | el núcleo algorítmico, binario y grayscale |
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | tres funciones `run_*` con I/O real en disco |
@@ -55,6 +55,8 @@ Lo que sí queda amarrado:
   no con igualdad.
 - **Los mensajes de error**, con `pytest.raises(ValueError, match="...")` sobre
   el texto literal. Esto convierte los mensajes en contrato público.
+- **Los tipos que `iterations` acepta y rechaza**: enteros de NumPy sí,
+  `bool` no, `float` y `str` no.
 
 ## Convenciones que la suite impone
 
@@ -64,7 +66,7 @@ Lo que sí queda amarrado:
 - Toda entrada inválida produce `ValueError`, nunca `TypeError` ni `assert`.
 - `vispyx.morphology` debe seguir funcionando como import path: los tests del
   núcleo importan desde la fachada, no desde `morphology_binary`.
-- `vispyx.__version__ == "0.2.0"` está clavado en un test: **subir la versión
+- `vispyx.__version__ == "0.2.1"` está clavado en un test: **subir la versión
   rompe la suite si no se actualiza también ahí**.
 
 ## Huecos de cobertura

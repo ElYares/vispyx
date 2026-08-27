@@ -101,20 +101,20 @@ apertura lo captura y la resta lo elimina.
 | `boundary`, `hitmiss`, `reconstruct`, `skeletonize`, `thin` | sí | **no existen** |
 | Cast intermedio en las restas | `int16` | `int32` |
 
-## Trampa conocida: pasar listas de Python
+## Sobre el dtype de salida
+
+El resultado conserva el dtype de la entrada, y la entrada puede ser cualquier
+cosa que `np.asarray` acepte:
 
 ```python
-gray_erode([[1, 2], [3, 4]])
-# AttributeError: 'list' object has no attribute 'dtype'
+gray_erode([[1, 2, 3], [4, 5, 6], [7, 8, 9]])   # funciona, dtype inferido
+gray_erode(np.ones((3, 3), np.float32)).dtype   # float32
 ```
 
-No es un `ValueError` de validación: `apply_grayscale_operation` termina con
-`img.astype(image.dtype)` usando el parámetro **crudo**, que en una lista no
-tiene `.dtype`. Afecta a `gray_erode`, `gray_dilate`, `gray_open` y `gray_close`.
-`gray_gradient`, `gray_tophat` y `gray_blackhat` no lo sufren porque casan
-contra el array ya validado.
-
-**Pasa siempre `np.ndarray`.**
+Hasta `0.2.0` las cuatro operaciones primitivas lanzaban `AttributeError` con
+listas anidadas, porque el cast final iba contra el argumento crudo. Desde
+`0.2.1` va contra el array ya validado, como siempre hicieron `gray_gradient`,
+`gray_tophat` y `gray_blackhat`.
 
 ## Receta: preparar una imagen antes de segmentar
 
