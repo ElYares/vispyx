@@ -691,3 +691,56 @@ def test_vpx_erode_rejects_non_2d_images():
 
     with pytest.raises(ValueError, match="image must be a 2D array"):
         vpx_erode(image)
+
+
+def test_iterations_accepts_numpy_integers():
+    """A count derived from an array is still a count."""
+    image = _to_uint8([[1, 1, 1], [1, 1, 1], [1, 1, 1]])
+    expected = vpx_erode(image, iterations=2)
+
+    for value in (np.int64(2), np.int32(2), np.uint8(2)):
+        np.testing.assert_array_equal(vpx_erode(image, iterations=value), expected)
+
+
+def test_iterations_rejects_booleans():
+    """``bool`` is a subclass of ``int``, but ``iterations=True`` is a mistake."""
+    image = _to_uint8([[1, 1], [1, 1]])
+
+    with pytest.raises(ValueError, match="iterations must be a positive integer"):
+        vpx_erode(image, iterations=True)
+
+
+def test_iterations_rejects_non_integers():
+    image = _to_uint8([[1, 1], [1, 1]])
+
+    for value in (2.0, "2", None):
+        with pytest.raises(ValueError, match="iterations must be a positive integer"):
+            vpx_erode(image, iterations=value)
+
+
+def test_max_iterations_accepts_numpy_integers():
+    marker = _to_uint8([[1, 0, 0], [0, 0, 0], [0, 0, 0]])
+    mask = _to_uint8([[1, 1, 0], [1, 1, 0], [0, 0, 0]])
+
+    np.testing.assert_array_equal(
+        vpx_reconstruct(marker, mask, max_iterations=np.int64(1)),
+        vpx_reconstruct(marker, mask, max_iterations=1),
+    )
+
+
+def test_grayscale_operations_accept_nested_lists():
+    """Nested lists used to raise AttributeError instead of working."""
+    image = [[10, 20, 30], [40, 50, 60], [70, 80, 90]]
+    expected = gray_erode(np.array(image))
+
+    np.testing.assert_array_equal(gray_erode(image), expected)
+    np.testing.assert_array_equal(gray_dilate(image), gray_dilate(np.array(image)))
+    np.testing.assert_array_equal(gray_open(image), gray_open(np.array(image)))
+    np.testing.assert_array_equal(gray_close(image), gray_close(np.array(image)))
+
+
+def test_grayscale_operations_preserve_input_dtype():
+    image = np.full((3, 3), 5, dtype=np.float32)
+
+    assert gray_erode(image).dtype == np.float32
+    assert gray_dilate(image).dtype == np.float32

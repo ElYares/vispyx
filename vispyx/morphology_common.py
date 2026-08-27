@@ -1,5 +1,7 @@
 """Shared validation and helper utilities for morphological operations."""
 
+import numbers
+
 import numpy as np
 
 
@@ -22,8 +24,17 @@ def validate_grayscale_image(image):
 
 
 def validate_iterations(iterations):
-    """Validate the number of morphological iterations."""
-    if not isinstance(iterations, int) or iterations <= 0:
+    """Validate the number of morphological iterations.
+
+    Any integer type is accepted, NumPy integers included: ``np.int64(2)`` is a
+    perfectly valid count and rejecting it only punished callers who derived the
+    value from an array. Booleans are rejected on purpose, even though ``bool``
+    is a subclass of ``int``, because ``iterations=True`` is a mistake worth
+    reporting rather than a request for one iteration.
+    """
+    if isinstance(iterations, bool) or not isinstance(iterations, numbers.Integral):
+        raise ValueError("iterations must be a positive integer")
+    if iterations <= 0:
         raise ValueError("iterations must be a positive integer")
 
 
@@ -89,7 +100,8 @@ def apply_binary_operation(image, kernel, iterations, reducer):
 
 def apply_grayscale_operation(image, kernel, iterations, reducer):
     """Apply a per-window grayscale morphological reduction."""
-    img = validate_grayscale_image(image).copy()
+    source = validate_grayscale_image(image)
+    img = source.copy()
     validate_iterations(iterations)
     kernel = validate_kernel(kernel)
 
@@ -108,4 +120,6 @@ def apply_grayscale_operation(image, kernel, iterations, reducer):
 
         img = output
 
-    return img.astype(image.dtype, copy=False)
+    # Cast against the validated array, not the raw argument: a nested list has
+    # no ``.dtype`` and would raise AttributeError instead of a clean error.
+    return img.astype(source.dtype, copy=False)
