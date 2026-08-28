@@ -136,20 +136,28 @@ es deliberadamente más chica.
 
 ### `apply_clahe(image, clip_limit=2.0, tile_grid_size=(8, 8), title_grid_size=None)`
 
-Delega íntegramente en OpenCV:
+Valida y delega en OpenCV:
 
 ```python
+img = validate_grayscale_image(image)
+if img.dtype not in (np.uint8, np.uint16):
+    raise ValueError("image must be uint8 or uint16")
 clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
-return clahe.apply(image)
+return clahe.apply(img)
 ```
 
 `title_grid_size` (con el typo "title") es un shim de compatibilidad: si se pasa
 distinto de `None`, **sobrescribe** a `tile_grid_size`. No aparece en el
 docstring y no debería usarse en código nuevo.
 
-Sin validación propia: la entrada debe ser de un canal, 8 o 16 bits. Cualquier
-otra cosa produce `cv2.error` sin traducir. Devuelve un array con el mismo shape
-y dtype de la entrada.
+Reusa `validate_grayscale_image`, así que comparte los dos mensajes de error
+del resto del paquete, y agrega uno propio: OpenCV solo implementa CLAHE para
+`CV_8UC1` y `CV_16UC1`. Verificado contra la versión instalada — `int16`,
+`int32`, `float32` y `float64` fallaban dentro de `clahe.cpp`.
+
+**Cambio de contrato**: antes esos casos salían como `cv2.error` sin traducir.
+Ahora salen como `ValueError`, igual que toda validación del paquete. Devuelve
+un array con el mismo shape y dtype de la entrada.
 
 ## Segmentación
 
@@ -207,6 +215,7 @@ son estables (los tests dependen de ellos literalmente).
 |---|---|
 | `image must be a 2D array` | `validate_binary_image`, `validate_grayscale_image` |
 | `image must contain numeric values` | `validate_grayscale_image` (dtype no numérico) |
+| `image must be uint8 or uint16` | `apply_clahe` (OpenCV solo implementa esos dos) |
 | `iterations must be a positive integer` | `validate_iterations` |
 | `kernel must be a 2D array` | `validate_kernel` |
 | `kernel must not be empty` | `validate_kernel` |

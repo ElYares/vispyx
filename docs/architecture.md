@@ -16,17 +16,23 @@ modificar el paquete, no para quien lo usa.
         |                     |                utils.py
         |          +----------+----------+          |
         |          |                     |          |
-        |   morphology_binary.py   morphology_grayscale.py
-        |          |                     |
-        |          +----------+----------+
-        |                     |
-        +----------> morphology_common.py
+        |   morphology_binary.py   morphology_grayscale.py    |
+        |          |                     |                    |
+        |          +----------+----------+                    |
+        |                     |                               |
+        +----------> morphology_common.py <-------------------+
                 validaciones + motor de ventana
 ```
 
 Regla de dependencias: `morphology_common` no importa a nadie del paquete. Los
 dos módulos de morfología importan solo de `common`. `morphology.py` no importa
 lógica, solo reagrupa. El CLI importa de la fachada.
+
+`preprocessing.py` también importa de `common`, y es la única arista fuera de la
+morfología. Es deliberada: `apply_clahe` valida con `validate_grayscale_image`
+en vez de repetir sus mensajes, que son contrato público y no deben duplicarse.
+La regla que importa — que `common` no dependa de nadie — se mantiene, y no hay
+ciclo. `segmentation.py` y `utils.py` siguen sin depender de nada del paquete.
 
 ## Los tres archivos que importan
 
