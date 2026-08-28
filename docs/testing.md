@@ -33,7 +33,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | `test_utils.py` | 9 | el lector de imágenes y `show_image` |
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
-| `test_cli.py` | 3 | tres funciones `run_*` con I/O real en disco |
+| `test_cli.py` | 3 | las tres `run_*` que no encajan en el molde, con I/O real |
 | `test_preprocessing.py` | 2 | shape y tipo de `apply_clahe`, nada más |
 
 ## Qué se verifica de verdad
