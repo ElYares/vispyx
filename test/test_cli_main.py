@@ -106,6 +106,77 @@ def test_sin_output_no_escribe_nada_y_lo_dice(imagen, tmp_path, monkeypatch, cap
     assert set(tmp_path.iterdir()) == antes
 
 
+def test_directorio_de_salida_que_no_se_puede_crear(imagen, tmp_path, monkeypatch, capsys):
+    """``os.makedirs`` corre antes de escribir y tambien puede fallar.
+
+    Sin atraparlo, un ``--output`` bajo un padre que no es directorio salia como
+    traceback de ``os``, no como error del CLI. Se usa un archivo como padre y
+    no un permiso porque ``chmod`` no frena a root, y la suite puede correr ahi.
+    """
+    padre = tmp_path / "soy_un_archivo"
+    padre.write_text("no soy un directorio")
+    salida = padre / "sub" / "resultado.pgm"
+
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "-o", str(salida)])
+
+    assert fallo.value.code == 2
+    capturado = capsys.readouterr()
+    assert f"No se pudo crear el directorio {salida.parent}" in capturado.err
+    assert "Imagen guardada" not in capturado.out
+
+
+def test_guardado_fallido_no_dice_que_guardo(imagen, tmp_path, monkeypatch, capsys):
+    """``cv2.imwrite`` devuelve ``False`` en vez de lanzar, y eso se ignoraba.
+
+    El CLI imprimia "Imagen guardada en: ..." y salia con codigo 0 sin que
+    existiera el archivo. Se fuerza el ``False`` directamente porque cuando
+    OpenCV lo devuelve depende de la version: en 5.0 una extension desconocida
+    lanza, y en 4.x devolvia ``False``. El contrato del CLI no debe depender de
+    cual de las dos ocurra.
+    """
+    salida = tmp_path / "resultado.pgm"
+    monkeypatch.setattr(cli.cv2, "imwrite", lambda *_: False)
+
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "-o", str(salida)])
+
+    assert fallo.value.code == 2
+    capturado = capsys.readouterr()
+    assert f"No se pudo guardar la imagen en {salida}" in capturado.err
+    assert "Imagen guardada" not in capturado.out
+
+
+def test_output_que_es_un_directorio_falla(imagen, tmp_path, monkeypatch, capsys):
+    """El camino real que devuelve ``False``: la ruta existe y no es un archivo."""
+    salida = tmp_path / "ya_es_un_directorio.pgm"
+    salida.mkdir()
+
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "-o", str(salida)])
+
+    assert fallo.value.code == 2
+    capturado = capsys.readouterr()
+    assert "no se pudo abrir el archivo para escritura" in capturado.err
+    assert "Imagen guardada" not in capturado.out
+
+
+def test_extension_desconocida_no_escupe_traceback(imagen, tmp_path, monkeypatch, capsys):
+    """OpenCV elige el codec por la extension y lanza ``cv2.error`` si no tiene.
+
+    Sin atrapar eso, el usuario recibia el traceback de ``loadsave.cpp`` y un
+    codigo de salida 1.
+    """
+    salida = tmp_path / "resultado.txt"
+
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "-o", str(salida)])
+
+    assert fallo.value.code == 2
+    assert "OpenCV no reconoce la extension" in capsys.readouterr().err
+    assert not salida.exists()
+
+
 def test_reconstruct_sin_mask_sale_con_codigo_2(imagen, monkeypatch, capsys):
     with pytest.raises(SystemExit) as salida:
         _correr(monkeypatch, ["vpx_reconstruct", imagen])
