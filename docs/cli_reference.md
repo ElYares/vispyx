@@ -154,14 +154,26 @@ if args.output:
     output_dir = os.path.dirname(args.output)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
-    cv2.imwrite(args.output, result)
+    try:
+        guardada = cv2.imwrite(args.output, result)
+    except cv2.error:
+        parser.error(f"No se pudo guardar la imagen en {args.output}: "
+                     "OpenCV no reconoce la extension")
+    if not guardada:
+        parser.error(f"No se pudo guardar la imagen en {args.output}: "
+                     "no se pudo abrir el archivo para escritura")
     print(f"Imagen guardada en: {args.output}")
 ```
 
-- crea el directorio de salida si `--output` incluye una ruta con carpetas
+- crea el directorio de salida si `--output` incluye una ruta con carpetas. Si
+  no puede crearlo — el padre no lo permite, o el padre no es un directorio —
+  falla con código **2** antes de procesar nada más
 - el formato lo decide la extensión del archivo (`cv2.imwrite`)
-- **no se verifica el valor de retorno de `cv2.imwrite`**: si la escritura
-  falla devolviendo `False`, el CLI igual imprime "Imagen guardada en: ..."
+- **un guardado que falla nunca se anuncia como exitoso**. `cv2.imwrite` falla
+  de dos maneras distintas y ninguna se ignora: devuelve `False` cuando no logra
+  abrir el archivo (permisos, la ruta es un directorio) y lanza `cv2.error`
+  cuando no tiene codec para la extensión. Las dos salen por `parser.error`, con
+  código **2** y mensaje en `stderr`, y `--show` ya no se ejecuta
 - sin `--output` imprime `Imagen procesada. No se guardó.`
 - `--output` y `--show` son combinables: primero guarda, después muestra
 

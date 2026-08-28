@@ -2,6 +2,20 @@
 
 ## No publicado
 
+- **fix**: `cli.py` anunciaba "Imagen guardada en: ..." y salia con codigo 0
+  aunque no hubiera guardado nada. `cv2.imwrite` falla de dos maneras y ninguna
+  se comprobaba: devuelve `False` cuando no logra abrir el archivo (permisos,
+  la ruta es un directorio) y lanza `cv2.error` cuando no tiene codec para la
+  extension — esto ultimo llegaba al usuario como traceback de OpenCV. Las dos
+  salen ahora por `parser.error`, con codigo **2** y mensaje en `stderr`, y
+  `--show` deja de ejecutarse sobre un guardado fallido
+- **fix**: `--output` bajo un directorio que no se puede crear salia como
+  traceback de `os` en vez de como error del CLI. `os.makedirs` corre antes de
+  escribir y falla con `PermissionError` si el padre no deja crear, o
+  `NotADirectoryError` si el padre no es un directorio. Ahora sale por
+  `parser.error` con codigo **2** y el `strerror` real del sistema
+- `test/test_cli_main.py`: 4 tests del guardado fallido, uno por cada camino.
+  Cobertura de 330 a 334 tests
 - `--kernel-shape` en el CLI: `square` (default), `cross`, `diamond` y `disk`.
   Los cuatro generadores de `vispyx.kernels` dejan de ser alcanzables solo
   desde Python. Omitir la flag construye el mismo cuadrado de unos de siempre

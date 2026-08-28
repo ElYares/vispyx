@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **330 tests, 330 pasan, ~2.8 s** (Python 3.13.13, numpy
+Estado verificado: **334 tests, 334 pasan, ~2.8 s** (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -27,7 +27,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | Archivo | Tests | Qué fija |
 |---|---|---|
 | `test_invariants.py` | 193 | las leyes de la morfología como propiedad general |
-| `test_cli_main.py` | 44 | el parser: flags, guardado y códigos de salida |
+| `test_cli_main.py` | 48 | el parser: flags, guardado y códigos de salida |
 | `test_morphology.py` | 36 | el núcleo algorítmico, binario y grayscale |
 | `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
 | `test_utils.py` | 9 | el lector de imágenes y `show_image` |
@@ -223,11 +223,12 @@ no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
 Si hay que elegir dónde poner el siguiente test, en este orden:
 
 1. Las ramas de `validate_kernel` que faltan — baratas, una línea cada una
-2. El retorno de `cv2.imwrite` sin comprobar en `cli.py`: puede imprimir
-   "Imagen guardada" sin haber guardado nada
+2. Las cuatro operaciones binarias que aún no están en el CLI: `vpx_tophat`,
+   `vpx_blackhat`, `vpx_boundary` y `vpx_hitmiss`
 
 Hecho: el diferencial contra `morph_scipy.py`, la cobertura de `utils.py`, la de
-`main()` y los invariantes de `test_invariants.py`.
+`main()`, los invariantes de `test_invariants.py` y el guardado fallido del
+CLI.
 
 ## Ver también
 

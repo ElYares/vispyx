@@ -235,8 +235,29 @@ def main():
     if args.output:
         output_dir = os.path.dirname(args.output)
         if output_dir:
-            os.makedirs(output_dir, exist_ok=True)
-        cv2.imwrite(args.output, result)
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+            except OSError as error:
+                # Falla antes de escribir nada: el padre no deja crear, o no es
+                # un directorio. Sin atrapar, sale como traceback de os.
+                parser.error(
+                    f"No se pudo crear el directorio {output_dir}: {error.strerror}"
+                )
+        try:
+            guardada = cv2.imwrite(args.output, result)
+        except cv2.error:
+            # OpenCV elige el codec por la extension y lanza si no tiene ninguno.
+            parser.error(
+                f"No se pudo guardar la imagen en {args.output}: "
+                "OpenCV no reconoce la extension"
+            )
+        if not guardada:
+            # Devuelve False, sin lanzar, cuando no logra abrir el archivo:
+            # permisos, la ruta es un directorio, el directorio no existe.
+            parser.error(
+                f"No se pudo guardar la imagen en {args.output}: "
+                "no se pudo abrir el archivo para escritura"
+            )
         print(f"Imagen guardada en: {args.output}")
 
     if args.show:
