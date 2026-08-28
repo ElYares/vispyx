@@ -12,7 +12,7 @@ modificar el paquete, no para quien lo usa.
         +---------------------+---------------------+
         |                     |                     |
    vispyx/cli.py      vispyx/morphology.py    preprocessing.py
-   (17 métodos)       fachada de compat.      segmentation.py
+   (20 métodos)       fachada de compat.      segmentation.py
         |                     |                utils.py
         |          +----------+----------+          |
         |          |                     |          |
@@ -123,15 +123,19 @@ Cosas reales del código, no hipótesis:
    para validar las operaciones binarias. `scipy` está declarado en el extra
    `dev`. Cubre erode, dilate, open, close y gradient; el resto de las
    operaciones sigue sin oráculo — ver [testing.md](./testing.md).
-2. **Cuatro operaciones binarias no están en el CLI**: `vpx_tophat`,
-   `vpx_blackhat`, `vpx_boundary` y `vpx_hitmiss`.
+2. **`vpx_hitmiss` no está en el CLI.** Es la única de las cuatro binarias que
+   quedó fuera: toma **dos** estructurantes (`kernel_hit` y `kernel_miss`) y no
+   toma `iterations`, así que no entra en el molde de `--kernel-shape`, que
+   expresa una sola forma. Necesita una decisión de diseño propia, no más
+   plomería.
 3. **El CLI sigue sin poder expresar kernels no cuadrados** (`3×5`). La API los
    acepta; `--kernel-shape` solo cubre las cuatro formas de lado impar. No hay
    una forma razonable de escribirlo como flag, así que está asumido, no
    pendiente.
 
-Resuelto: el CLI ya no construye siempre `np.ones((n, n))`. `--kernel-shape`
-expone los cuatro generadores de `kernels.py`.
+Resuelto: el CLI ya no construye siempre `np.ones((n, n))` — `--kernel-shape`
+expone los cuatro generadores de `kernels.py`. Y `vpx_tophat`, `vpx_blackhat` y
+`vpx_boundary` ya son alcanzables desde la línea de comandos.
 
 ## Cómo agregar una operación
 

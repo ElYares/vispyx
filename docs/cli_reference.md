@@ -46,6 +46,7 @@ El CLI **no usa subparsers**. Es un único `ArgumentParser` plano donde el
 ```text
 clahe   otsu
 vpx_erode   vpx_dilate   vpx_open   vpx_close   vpx_gradient
+vpx_tophat   vpx_blackhat   vpx_boundary
 vpx_reconstruct   vpx_skeletonize   vpx_thin
 gray_erode   gray_dilate   gray_open   gray_close
 gray_gradient   gray_tophat   gray_blackhat
@@ -130,6 +131,9 @@ por `vispyx otsu`.
 | `vpx_open` | `vpx_open(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
 | `vpx_close` | `vpx_close(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
 | `vpx_gradient` | `vpx_gradient(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
+| `vpx_tophat` | `vpx_tophat(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
+| `vpx_blackhat` | `vpx_blackhat(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
+| `vpx_boundary` | `vpx_boundary(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
 | `vpx_reconstruct` | `vpx_reconstruct(marker, mask, kernel, max_iterations)` | `--mask`, `--kernel-size`, `--kernel-shape`, `--max-iterations` |
 | `vpx_skeletonize` | `vpx_skeletonize(binary, max_iterations)` | `--max-iterations` |
 | `vpx_thin` | `vpx_thin(binary, iterations)` | `--iterations` |
