@@ -22,6 +22,7 @@ from vispyx.morphology import (
     vpx_thin,
     vpx_tophat,
 )
+from vispyx.kernels import kernel_square
 
 
 def _to_uint8(binary_matrix):
@@ -677,6 +678,114 @@ def test_vpx_erode_rejects_even_sized_kernel():
 
     with pytest.raises(ValueError, match="kernel dimensions must be odd"):
         vpx_erode(image, kernel=kernel)
+
+
+def test_kernel_none_defaults_to_a_3x3_of_ones():
+    """El default de ``validate_kernel`` no estaba fijado en ningun lado.
+
+    Se comprueba contra las dos vecindades adyacentes: igual al 3x3 explicito y
+    distinto al 5x5. Solo la primera mitad dejaria pasar un default mas grande.
+    """
+    image = _to_uint8(
+        [
+            [0, 0, 0, 0, 0, 0, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 0, 0, 0, 0, 0, 0],
+        ]
+    )
+
+    por_defecto = vpx_erode(image)
+
+    np.testing.assert_array_equal(por_defecto, vpx_erode(image, kernel=np.ones((3, 3), dtype=np.uint8)))
+    assert not np.array_equal(por_defecto, vpx_erode(image, kernel=np.ones((5, 5), dtype=np.uint8)))
+
+
+def test_vpx_erode_rejects_non_2d_kernels():
+    image = _to_uint8([[1, 1], [1, 1]])
+    kernel = np.ones((3, 3, 3), dtype=np.uint8)
+
+    with pytest.raises(ValueError, match="kernel must be a 2D array"):
+        vpx_erode(image, kernel=kernel)
+
+
+def test_vpx_erode_rejects_empty_kernels():
+    """Va antes que la paridad: un ``(0, 0)`` tambien tiene lados pares."""
+    image = _to_uint8([[1, 1], [1, 1]])
+    kernel = np.zeros((0, 0), dtype=np.uint8)
+
+    with pytest.raises(ValueError, match="kernel must not be empty"):
+        vpx_erode(image, kernel=kernel)
+
+
+def test_vpx_erode_rejects_kernels_without_active_elements():
+    image = _to_uint8([[1, 1], [1, 1]])
+    kernel = np.zeros((3, 3), dtype=np.uint8)
+
+    with pytest.raises(ValueError, match="kernel must contain at least one active element"):
+        vpx_erode(image, kernel=kernel)
+
+
+def test_kernel_values_are_normalized_to_zeros_and_ones():
+    """``validate_kernel`` normaliza con ``> 0``: el peso no cuenta, la posicion si.
+
+    Las dos afirmaciones hacen falta. La primera sola pasa aunque la
+    normalizacion sea ``>= 0``, porque entonces la cruz pesada y la cruz limpia
+    degeneran las dos en el mismo cuadrado y siguen coincidiendo. La segunda es
+    la que fija que sea ``> 0``: bajo ``>= 0`` la cruz pesada se vuelve un
+    cuadrado y deja de diferenciarse de el.
+
+    La imagen tiene una esquina mordida a proposito. Sobre un bloque solido,
+    cruz y cuadrado erosionan identico y el test no distinguiria nada — la misma
+    trampa que obliga a usar kernels de 7 en ``test_invariants.py``.
+    """
+    image = _to_uint8(
+        [
+            [0, 0, 0, 0, 0, 0, 0],
+            [0, 1, 1, 1, 1, 0, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 0, 0, 0, 0, 0, 0],
+        ]
+    )
+    cruz_pesada = np.array([[0, 7, 0], [7, 7, 7], [0, 7, 0]], dtype=np.uint8)
+    cruz = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8)
+    cuadrado = np.ones((3, 3), dtype=np.uint8)
+
+    pesada = vpx_erode(image, kernel=cruz_pesada)
+
+    np.testing.assert_array_equal(pesada, vpx_erode(image, kernel=cruz))
+    assert not np.array_equal(pesada, vpx_erode(image, kernel=cuadrado))
+
+
+def test_vpx_reconstruct_rejects_marker_and_mask_of_different_shapes():
+    marker = _to_uint8([[0, 0, 0], [0, 1, 0], [0, 0, 0]])
+    mask = _to_uint8([[1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1]])
+
+    with pytest.raises(ValueError, match="marker and mask must have the same shape"):
+        vpx_reconstruct(marker, mask)
+
+
+def test_vpx_hitmiss_rejects_kernels_of_different_shapes():
+    image = _to_uint8([[1, 1, 1], [1, 1, 1], [1, 1, 1]])
+    kernel_hit = np.ones((3, 3), dtype=np.uint8)
+    # con un kernel_miss todo ceros salta antes "at least one active element"
+    kernel_miss = np.eye(5, dtype=np.uint8)
+
+    with pytest.raises(ValueError, match="kernel_hit and kernel_miss must have the same shape"):
+        vpx_hitmiss(image, kernel_hit, kernel_miss)
+
+
+@pytest.mark.parametrize("size", [0, -3, 3.0, "3"])
+def test_kernel_generators_reject_sizes_that_are_not_positive_integers(size):
+    """La rama no-par de ``_validate_size``, distinta de ``size must be odd``."""
+    with pytest.raises(ValueError, match="size must be a positive integer"):
+        kernel_square(size)
 
 
 def test_vpx_erode_rejects_non_positive_iterations():

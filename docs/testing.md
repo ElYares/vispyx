@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **334 tests, 334 pasan, ~2.8 s** (Python 3.13.13, numpy
+Estado verificado: **345 tests, 345 pasan, ~3.9 s** (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -28,7 +28,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 |---|---|---|
 | `test_invariants.py` | 193 | las leyes de la morfología como propiedad general |
 | `test_cli_main.py` | 48 | el parser: flags, guardado y códigos de salida |
-| `test_morphology.py` | 36 | el núcleo algorítmico, binario y grayscale |
+| `test_morphology.py` | 47 | el núcleo algorítmico, binario y grayscale |
 | `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
 | `test_utils.py` | 9 | el lector de imágenes y `show_image` |
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
@@ -127,17 +127,27 @@ de `clip_limit`, ni el dtype, ni el alias histórico `title_grid_size`. Además 
 test genera ruido aleatorio **sin semilla fija**: es no determinista, aunque hoy
 solo mire la forma.
 
-### Ramas de validación nunca ejercidas
+### Ramas de validación
 
-`validate_kernel` tiene cuatro caminos de error y los tests solo pisan uno
-(dimensión par). Quedan sin probar:
+Todas las de `validate_kernel` están ejercidas, incluidas las dos que no lanzan:
+el default `kernel=None` (un 3×3 de unos) y la normalización con `> 0`. También
+`marker and mask must have the same shape`, `kernel_hit and kernel_miss must
+have the same shape` y la rama no-par de `_validate_size`
+(`size must be a positive integer`).
 
-- `kernel must be a 2D array`
-- `kernel must not be empty`
-- `kernel must contain at least one active element`
-- `marker and mask must have the same shape`
-- `kernel_hit and kernel_miss must have the same shape`
-- `size must be a positive integer` (la rama no-par de `_validate_size`)
+**Dos de esos tests necesitan más de una afirmación para morder**, y la razón es
+la misma en los dos casos: la mutación que deberían atrapar hace degenerar el
+caso en otro que sigue coincidiendo.
+
+- el default se compara contra el 3×3 explícito **y** contra el 5×5. Solo la
+  primera mitad dejaría pasar un default más grande
+- la normalización compara la cruz pesada contra la cruz limpia **y** contra el
+  cuadrado. Bajo `>= 0` la cruz pesada se vuelve un cuadrado, y las dos cruces
+  degeneran en lo mismo: la primera afirmación seguiría pasando
+
+La imagen de ese segundo test tiene una esquina mordida a propósito. **Sobre un
+bloque sólido, cruz y cuadrado erosionan idéntico** — la misma trampa que obliga
+a usar kernels de 7 en `test_invariants.py`.
 
 ### Casos límite sin probar
 
@@ -222,13 +232,14 @@ no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
 
 Si hay que elegir dónde poner el siguiente test, en este orden:
 
-1. Las ramas de `validate_kernel` que faltan — baratas, una línea cada una
-2. Las cuatro operaciones binarias que aún no están en el CLI: `vpx_tophat`,
+1. Las cuatro operaciones binarias que aún no están en el CLI: `vpx_tophat`,
    `vpx_blackhat`, `vpx_boundary` y `vpx_hitmiss`
+2. `apply_clahe`: no se prueba el efecto de `clip_limit`, ni el dtype, ni el
+   alias histórico `title_grid_size`, y su test genera ruido **sin semilla fija**
 
 Hecho: el diferencial contra `morph_scipy.py`, la cobertura de `utils.py`, la de
-`main()`, los invariantes de `test_invariants.py` y el guardado fallido del
-CLI.
+`main()`, los invariantes de `test_invariants.py`, el guardado fallido del CLI y
+las ramas de validación.
 
 ## Ver también
 
