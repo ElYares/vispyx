@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **137 tests, 137 pasan, ~1.4 s** (Python 3.13.13, numpy
+Estado verificado: **330 tests, 330 pasan, ~2.8 s** (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -26,8 +26,9 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 
 | Archivo | Tests | Qué fija |
 |---|---|---|
-| `test_morphology.py` | 36 | el núcleo algorítmico, binario y grayscale |
+| `test_invariants.py` | 193 | las leyes de la morfología como propiedad general |
 | `test_cli_main.py` | 44 | el parser: flags, guardado y códigos de salida |
+| `test_morphology.py` | 36 | el núcleo algorítmico, binario y grayscale |
 | `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
 | `test_utils.py` | 9 | el lector de imágenes y `show_image` |
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
@@ -38,9 +39,17 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 ## Qué se verifica de verdad
 
 La estrategia principal es **valor exacto sobre matrices chicas hechas a mano**,
-comparadas con `assert_array_equal` contra un resultado escrito a mano. No hay
-property-based testing. Sí hay, desde `test_reference_scipy.py`, comparación
-contra una implementación de referencia.
+comparadas con `assert_array_equal` contra un resultado escrito a mano. A eso se
+suman dos capas que no dependen de casos elegidos: comparación contra una
+implementación de referencia, desde `test_reference_scipy.py`, y property-based
+testing sobre imágenes aleatorias con semilla fija, desde `test_invariants.py`.
+
+El grueso del conteo vive ahí: 193 de los 330 tests son invariantes, porque cada
+propiedad se multiplica por cuatro formas de kernel y cuatro semillas. Son
+también el grueso del tiempo — la suite pasó de ~1.4 s a ~2.8 s — y el precio se
+paga en imágenes de 20×20, porque los bucles no están vectorizados y el costo
+crece con el área: un `vpx_open` con kernel 7×7 tarda 4 ms en 20×20 y 37 ms en
+64×64.
 
 Lo que sí queda amarrado:
 
@@ -137,17 +146,41 @@ cuadrados (`3×5`); `max_iterations` explícito en `vpx_reconstruct` y
 `vpx_skeletonize` (solo se prueba el camino hasta convergencia);
 `iterations > 2`.
 
-### Propiedades matemáticas ausentes
+### Propiedades matemáticas
 
-Nada verifica las garantías clásicas de morfología como **propiedad general**,
-solo como casos puntuales:
+`test_invariants.py` verifica las garantías clásicas como **propiedad general**
+sobre imágenes aleatorias con semilla fija, en los dos dominios de valores:
 
 - idempotencia: `open(open(x)) == open(x)`, `close(close(x)) == close(x)`
-- dualidad por complemento: `erode(x, k) == ¬dilate(¬x, k)`
-- extensividad: `open(x) ⊆ x ⊆ close(x)` para cualquier `x`
+- dualidad por complemento: `erode(x, k) == ¬dilate(¬x, k)`, y lo mismo un nivel
+  más arriba con `open` contra `close`
+- orden: `erode(x) ⊆ open(x) ⊆ x ⊆ close(x) ⊆ dilate(x)`
+- monotonía: `x ⊆ y` implica `erode(x) ⊆ erode(y)`, e igual para las otras tres
 
-Son exactamente el tipo de invariante que se verifica bien con imágenes
-aleatorias y semilla fija, y hoy no hay ninguno.
+Cada uno corre una vez por forma de kernel. Tres decisiones de diseño valen la
+pena:
+
+- **El tamaño de kernel es 7, nunca 3 ni 5.** Las cuatro formas se solapan en
+  radios chicos: en 3, cruz, diamante y disco son la misma matriz, y en 5 lo
+  siguen siendo diamante y disco. Recién en 7 las cuatro difieren (pesan 49, 13,
+  25 y 29 píxeles). `test_the_four_kernel_shapes_are_distinct_at_this_size`
+  guarda esa premisa, para que bajar la constante falle en vez de degradar en
+  silencio cuatro ramas a dos.
+- **Las imágenes no van enmarcadas en fondo**, a diferencia del diferencial.
+  Estas propiedades se comparan contra `vispyx` mismo, y el reflejo las preserva
+  también en el borde. Afirmar sobre el array completo es más simple y más
+  estricto.
+- **Alcance medido frente al padding.** Cambiar el reflejo por ceros rompe 96 de
+  estos tests: el relleno con ceros no es una extensión de la imagen y las leyes
+  dejan de valer en la orilla. Cambiarlo por `edge` no rompe **ninguno**: la
+  replicación preserva todas estas propiedades igual que el reflejo. Es decir,
+  restringen la *clase* de padding, no la elección dentro de ella. Esa elección
+  es la de la Decisión 001 y la sigue cubriendo `test_reference_scipy`.
+
+**Lo que no pueden atrapar, por construcción**: las propiedades valen para
+*cualquier* elemento estructurante, así que permutar las ramas `diamond` y
+`disk` las pasa enteras. La corrección de cada forma es trabajo de
+`test_kernels.py`.
 
 ### Lo que el diferencial contra SciPy ya cubre
 
@@ -189,13 +222,12 @@ no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
 
 Si hay que elegir dónde poner el siguiente test, en este orden:
 
-1. Invariantes con imágenes aleatorias y semilla fija — idempotencia y dualidad,
-   que el diferencial no verifica porque compara contra otra implementación, no
-   contra una propiedad
-2. Las ramas de `validate_kernel` que faltan — baratas, una línea cada una
+1. Las ramas de `validate_kernel` que faltan — baratas, una línea cada una
+2. El retorno de `cv2.imwrite` sin comprobar en `cli.py`: puede imprimir
+   "Imagen guardada" sin haber guardado nada
 
-Hecho: el diferencial contra `morph_scipy.py`, la cobertura de `utils.py` y la
-de `main()`.
+Hecho: el diferencial contra `morph_scipy.py`, la cobertura de `utils.py`, la de
+`main()` y los invariantes de `test_invariants.py`.
 
 ## Ver también
 
