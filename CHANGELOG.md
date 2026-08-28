@@ -2,6 +2,13 @@
 
 ## No publicado
 
+- `test/test_preprocessing.py` reescrito: 7 tests en vez de 2. Los viejos
+  miraban shape y tipo sobre ruido **sin semilla fija**, y esta medido lo poco
+  que amarraban — con ellos, `apply_clahe` devolviendo la entrada sin tocar
+  pasa, e ignorar `clip_limit` o `tile_grid_size` tambien. Ahora se afirma la
+  expansion del contraste local, el dtype, el determinismo, que los dos
+  parametros lleguen a OpenCV, y el alias historico `title_grid_size`, que nada
+  fijaba. Cobertura de 351 a 356 tests
 - refactor interno de `cli.py`: las ocho `run_vpx_*` que eran la misma funcion
   de cuatro lineas con otro nombre se colapsan en `_run_binary_method`, el
   gemelo de `_run_grayscale_method` que ya existia. 64 lineas menos, sin cambio

@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **351 tests, 351 pasan, ~3.9 s** (Python 3.13.13, numpy
+Estado verificado: **356 tests, 356 pasan, ~4.0 s** (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -34,7 +34,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | las tres `run_*` que no encajan en el molde, con I/O real |
-| `test_preprocessing.py` | 2 | shape y tipo de `apply_clahe`, nada más |
+| `test_preprocessing.py` | 7 | qué hace `apply_clahe` y que sus parámetros lleguen |
 
 ## Qué se verifica de verdad
 
@@ -120,12 +120,26 @@ Reales, verificados leyendo la suite completa.
 incluida la distinción entre archivo ausente e ilegible, y que el CLI use ese
 mismo lector.
 
-### `preprocessing.py`: test puramente estructural
+### `preprocessing.py`
 
-Solo se verifica shape y que el retorno sea `np.ndarray`. No se prueba el efecto
-de `clip_limit`, ni el dtype, ni el alias histórico `title_grid_size`. Además el
-test genera ruido aleatorio **sin semilla fija**: es no determinista, aunque hoy
-solo mire la forma.
+Los dos tests originales miraban shape y tipo sobre ruido **sin semilla fija**.
+Está medido lo poco que eso amarraba: con ellos, `apply_clahe` devolviendo la
+entrada **sin tocar** pasa, e ignorar `clip_limit` o `tile_grid_size` también.
+
+Ahora se afirma lo que CLAHE existe para hacer — **expandir el contraste
+local** — sobre una imagen construida, no sorteada: una mitad con rango completo
+y otra casi plana. La mitad plana pasa de un rango de 15 niveles a más de 150.
+Sobre un gradiente uniforme el efecto sería chico y el test no distinguiría
+gran cosa, que es por qué la imagen tiene dos mitades.
+
+También quedan fijados los dos parámetros y el alias histórico
+`title_grid_size` — un typo que `preprocessing.py:14` conserva por
+compatibilidad y que nada amarraba: borrarlo no rompía ningún test.
+
+**Lo que sigue sin cubrirse:** `apply_clahe` no valida su entrada. Un array
+`float64`, uno de tres canales o una lista anidada salen como `cv2.error` de
+`clahe.cpp`, no como el `ValueError` que el resto del paquete garantiza. Es un
+hueco de contrato, no de tests: arreglarlo cambia comportamiento.
 
 ### Ramas de validación
 
@@ -232,14 +246,14 @@ no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
 
 Si hay que elegir dónde poner el siguiente test, en este orden:
 
-1. Las cuatro operaciones binarias que aún no están en el CLI: `vpx_tophat`,
-   `vpx_blackhat`, `vpx_boundary` y `vpx_hitmiss`
-2. `apply_clahe`: no se prueba el efecto de `clip_limit`, ni el dtype, ni el
-   alias histórico `title_grid_size`, y su test genera ruido **sin semilla fija**
+1. La validación de entrada de `apply_clahe`: hoy filtra `cv2.error` en vez de
+   `ValueError`, contra la convención del resto del paquete
+2. `vpx_hitmiss` en el CLI — la única de las cuatro binarias que quedó fuera, y
+   necesita decidir cómo se expresan dos estructurantes en una línea de comandos
 
 Hecho: el diferencial contra `morph_scipy.py`, la cobertura de `utils.py`, la de
-`main()`, los invariantes de `test_invariants.py`, el guardado fallido del CLI y
-las ramas de validación.
+`main()`, los invariantes de `test_invariants.py`, el guardado fallido del CLI,
+las ramas de validación y `apply_clahe`.
 
 ## Ver también
 
