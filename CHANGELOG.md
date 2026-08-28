@@ -2,6 +2,12 @@
 
 ## No publicado
 
+- `test/test_morphology.py`: 11 tests sobre las ramas de validacion que no
+  ejercia nadie. Las seis de `validate_kernel` — incluidas las dos que no
+  lanzan, el default `kernel=None` y la normalizacion con `> 0` — mas
+  `marker and mask must have the same shape`,
+  `kernel_hit and kernel_miss must have the same shape` y la rama no-par de
+  `_validate_size`. Cobertura de 334 a 345 tests
 - **fix**: `cli.py` anunciaba "Imagen guardada en: ..." y salia con codigo 0
   aunque no hubiera guardado nada. `cv2.imwrite` falla de dos maneras y ninguna
   se comprobaba: devuelve `False` cuando no logra abrir el archivo (permisos,
