@@ -57,7 +57,9 @@ Toca cinco lugares, en este orden: la implementación en `morphology_binary.py` 
 `morphology_grayscale.py` → `__all__` de `morphology.py` → `__all__` de
 `__init__.py` → `expected_symbols` en `test/test_public_api.py` → test de valor
 exacto en `test/test_morphology.py`. Si además va al CLI: lista `methods`,
-función `run_*`, y `docs/cli_reference.md`. Cierra con `CHANGELOG.md`.
+despacho con `_run_binary_method` o `_run_grayscale_method`, y
+`docs/cli_reference.md`. Cierra con `CHANGELOG.md`. Solo necesita su propia
+`run_*` si no toma `(image, kernel, iterations)`.
 
 ## Trampas conocidas
 

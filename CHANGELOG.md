@@ -2,6 +2,12 @@
 
 ## No publicado
 
+- refactor interno de `cli.py`: las ocho `run_vpx_*` que eran la misma funcion
+  de cuatro lineas con otro nombre se colapsan en `_run_binary_method`, el
+  gemelo de `_run_grayscale_method` que ya existia. 64 lineas menos, sin cambio
+  de comportamiento. Sobreviven `run_vpx_reconstruct`, `run_vpx_skeletonize` y
+  `run_vpx_thin`, que no toman `(image, kernel, iterations)`. Ninguna de las
+  ocho estaba en `__init__.py` ni se usaba fuera de `cli.py`
 - `vpx_tophat`, `vpx_blackhat` y `vpx_boundary` en el CLI. Existian en la API
   desde `0.2.0` y solo se alcanzaban desde Python, aunque sus primos grises
   (`gray_tophat`, `gray_blackhat`) si estaban. El CLI pasa de 17 a 20 metodos y

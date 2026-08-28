@@ -146,8 +146,11 @@ expone los cuatro generadores de `kernels.py`. Y `vpx_tophat`, `vpx_blackhat` y
 4. Súmala al set `expected_symbols` de `test/test_public_api.py`.
 5. Escribe el test de valor exacto en `test/test_morphology.py` sobre una matriz
    chica hecha a mano, y el test de la validación que rechaza.
-6. Si la expones en el CLI: agrégala a la lista `methods`, escribe su `run_*`, y
-   documéntala en [cli_reference.md](./cli_reference.md).
+6. Si la expones en el CLI: agrégala a la lista `methods`, despáchala con
+   `_run_binary_method` o `_run_grayscale_method` según su dominio, y
+   documéntala en [cli_reference.md](./cli_reference.md). Solo necesita su
+   propia `run_*` si no toma `(image, kernel, iterations)` — es el caso de
+   `vpx_reconstruct`, `vpx_skeletonize` y `vpx_thin`.
 7. Actualiza `CHANGELOG.md`.
 
 ## Ver también

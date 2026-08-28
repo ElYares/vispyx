@@ -82,62 +82,6 @@ def run_otsu(image_path):
     return segment_otsu(img)
 
 
-def run_vpx_erode(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
-    img = read_grayscale(image_path)
-    binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size, kernel_shape)
-    return vpx_erode(binary, kernel, iterations)
-
-
-def run_vpx_dilate(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
-    img = read_grayscale(image_path)
-    binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size, kernel_shape)
-    return vpx_dilate(binary, kernel, iterations)
-
-
-def run_vpx_open(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
-    img = read_grayscale(image_path)
-    binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size, kernel_shape)
-    return vpx_open(binary, kernel, iterations)
-
-
-def run_vpx_close(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
-    img = read_grayscale(image_path)
-    binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size, kernel_shape)
-    return vpx_close(binary, kernel, iterations)
-
-
-def run_vpx_gradient(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
-    img = read_grayscale(image_path)
-    binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size, kernel_shape)
-    return vpx_gradient(binary, kernel, iterations)
-
-
-def run_vpx_tophat(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
-    img = read_grayscale(image_path)
-    binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size, kernel_shape)
-    return vpx_tophat(binary, kernel, iterations)
-
-
-def run_vpx_blackhat(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
-    img = read_grayscale(image_path)
-    binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size, kernel_shape)
-    return vpx_blackhat(binary, kernel, iterations)
-
-
-def run_vpx_boundary(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
-    img = read_grayscale(image_path)
-    binary = (img > 0).astype(np.uint8) * 255
-    kernel = _build_kernel(kernel_size, kernel_shape)
-    return vpx_boundary(binary, kernel, iterations)
-
-
 def run_vpx_reconstruct(marker_path, mask_path, kernel_size=3, max_iterations=None, kernel_shape="square"):
     marker = read_grayscale(marker_path)
     mask = read_grayscale(mask_path)
@@ -157,6 +101,19 @@ def run_vpx_thin(image_path, iterations=1):
     img = read_grayscale(image_path)
     binary = (img > 0).astype(np.uint8) * 255
     return vpx_thin(binary, iterations=iterations)
+
+
+def _run_binary_method(image_path, method, kernel_size=3, iterations=1, kernel_shape="square"):
+    """Gemelo binario de ``_run_grayscale_method``: binariza antes de operar.
+
+    Las ``vpx_*`` binarizan igual por dentro, pero el CLI lo hace explicito
+    porque lee de disco: un PNG de grises entraria como mascara casi solida sin
+    que nada avise. Es la unica diferencia con la version gris.
+    """
+    img = read_grayscale(image_path)
+    binary = (img > 0).astype(np.uint8) * 255
+    kernel = _build_kernel(kernel_size, kernel_shape)
+    return method(binary, kernel, iterations)
 
 
 def _run_grayscale_method(image_path, method, kernel_size=3, iterations=1, kernel_shape="square"):
@@ -219,21 +176,21 @@ def main():
     elif args.method == "otsu":
         result = run_otsu(args.image_path)
     elif args.method == "vpx_erode":
-        result = run_vpx_erode(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+        result = _run_binary_method(args.image_path, vpx_erode, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_dilate":
-        result = run_vpx_dilate(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+        result = _run_binary_method(args.image_path, vpx_dilate, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_open":
-        result = run_vpx_open(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+        result = _run_binary_method(args.image_path, vpx_open, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_close":
-        result = run_vpx_close(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+        result = _run_binary_method(args.image_path, vpx_close, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_gradient":
-        result = run_vpx_gradient(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+        result = _run_binary_method(args.image_path, vpx_gradient, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_tophat":
-        result = run_vpx_tophat(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+        result = _run_binary_method(args.image_path, vpx_tophat, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_blackhat":
-        result = run_vpx_blackhat(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+        result = _run_binary_method(args.image_path, vpx_blackhat, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_boundary":
-        result = run_vpx_boundary(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+        result = _run_binary_method(args.image_path, vpx_boundary, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_reconstruct":
         if not args.mask_path:
             parser.error("--mask es obligatorio para vpx_reconstruct")
