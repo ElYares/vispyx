@@ -20,6 +20,8 @@ from vispyx.morphology import (
     gray_gradient,
     gray_open,
     gray_tophat,
+    vpx_blackhat,
+    vpx_boundary,
     vpx_close,
     vpx_dilate,
     vpx_erode,
@@ -28,6 +30,7 @@ from vispyx.morphology import (
     vpx_reconstruct,
     vpx_skeletonize,
     vpx_thin,
+    vpx_tophat,
 )
 from vispyx.preprocessing import apply_clahe
 from vispyx.segmentation import segment_otsu
@@ -114,6 +117,27 @@ def run_vpx_gradient(image_path, kernel_size=3, iterations=1, kernel_shape="squa
     return vpx_gradient(binary, kernel, iterations)
 
 
+def run_vpx_tophat(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
+    img = read_grayscale(image_path)
+    binary = (img > 0).astype(np.uint8) * 255
+    kernel = _build_kernel(kernel_size, kernel_shape)
+    return vpx_tophat(binary, kernel, iterations)
+
+
+def run_vpx_blackhat(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
+    img = read_grayscale(image_path)
+    binary = (img > 0).astype(np.uint8) * 255
+    kernel = _build_kernel(kernel_size, kernel_shape)
+    return vpx_blackhat(binary, kernel, iterations)
+
+
+def run_vpx_boundary(image_path, kernel_size=3, iterations=1, kernel_shape="square"):
+    img = read_grayscale(image_path)
+    binary = (img > 0).astype(np.uint8) * 255
+    kernel = _build_kernel(kernel_size, kernel_shape)
+    return vpx_boundary(binary, kernel, iterations)
+
+
 def run_vpx_reconstruct(marker_path, mask_path, kernel_size=3, max_iterations=None, kernel_shape="square"):
     marker = read_grayscale(marker_path)
     mask = read_grayscale(mask_path)
@@ -150,6 +174,9 @@ def main():
         "vpx_open",
         "vpx_close",
         "vpx_gradient",
+        "vpx_tophat",
+        "vpx_blackhat",
+        "vpx_boundary",
         "vpx_reconstruct",
         "vpx_skeletonize",
         "vpx_thin",
@@ -201,6 +228,12 @@ def main():
         result = run_vpx_close(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_gradient":
         result = run_vpx_gradient(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+    elif args.method == "vpx_tophat":
+        result = run_vpx_tophat(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+    elif args.method == "vpx_blackhat":
+        result = run_vpx_blackhat(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+    elif args.method == "vpx_boundary":
+        result = run_vpx_boundary(args.image_path, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_reconstruct":
         if not args.mask_path:
             parser.error("--mask es obligatorio para vpx_reconstruct")

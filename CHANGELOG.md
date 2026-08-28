@@ -2,6 +2,14 @@
 
 ## No publicado
 
+- `vpx_tophat`, `vpx_blackhat` y `vpx_boundary` en el CLI. Existian en la API
+  desde `0.2.0` y solo se alcanzaban desde Python, aunque sus primos grises
+  (`gray_tophat`, `gray_blackhat`) si estaban. El CLI pasa de 17 a 20 metodos y
+  las tres aceptan `--kernel-size`, `--kernel-shape` e `--iterations`
+- **`vpx_hitmiss` queda afuera a proposito**: toma dos estructurantes y no toma
+  `iterations`, asi que no entra en el molde de `--kernel-shape`. Necesita una
+  decision de diseno propia, no mas plomeria
+- cobertura de 345 a 351 tests
 - `test/test_morphology.py`: 11 tests sobre las ramas de validacion que no
   ejercia nadie. Las seis de `validate_kernel` — incluidas las dos que no
   lanzan, el default `kernel=None` y la normalizacion con `> 0` — mas

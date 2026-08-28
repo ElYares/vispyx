@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from vispyx import cli
+from vispyx import vpx_blackhat, vpx_boundary, vpx_tophat
 from vispyx.kernels import kernel_cross, kernel_diamond, kernel_disk, kernel_square
 
 METODOS = [
@@ -22,6 +23,9 @@ METODOS = [
     "vpx_open",
     "vpx_close",
     "vpx_gradient",
+    "vpx_tophat",
+    "vpx_blackhat",
+    "vpx_boundary",
     "vpx_reconstruct",
     "vpx_skeletonize",
     "vpx_thin",
@@ -71,7 +75,7 @@ def _argumentos(metodo, imagen, mascara, salida):
 
 @pytest.mark.parametrize("metodo", METODOS)
 def test_cada_metodo_corre_y_guarda(metodo, imagen, mascara, tmp_path, monkeypatch, capsys):
-    """Los 17 metodos del parser tienen que estar realmente conectados."""
+    """Los 20 metodos del parser tienen que estar realmente conectados."""
     salida = str(tmp_path / f"{metodo}.pgm")
 
     if metodo == "vpx_reconstruct":
@@ -86,6 +90,34 @@ def test_cada_metodo_corre_y_guarda(metodo, imagen, mascara, tmp_path, monkeypat
     resultado = cv2.imread(salida, cv2.IMREAD_GRAYSCALE)
     assert resultado is not None
     assert resultado.shape == (16, 16)
+
+
+@pytest.mark.parametrize(
+    "metodo,operacion",
+    [("vpx_tophat", vpx_tophat), ("vpx_blackhat", vpx_blackhat), ("vpx_boundary", vpx_boundary)],
+)
+def test_las_binarias_nuevas_despachan_a_su_operacion(
+    metodo, operacion, imagen, tmp_path, monkeypatch
+):
+    """Que el metodo corra no prueba que llame a la operacion correcta.
+
+    ``test_cada_metodo_corre_y_guarda`` pasaria igual con las tres ramas de
+    despacho permutadas entre si. Esto compara contra la funcion de la libreria
+    sobre la misma entrada binarizada, asi que solo pasa la rama que corresponde.
+    Sobre el fixture las tres dan resultados distintos — 1, 3 y 29 pixeles
+    activos — que es lo que hace la comparacion capaz de distinguirlas.
+    """
+    salida = tmp_path / f"{metodo}.pgm"
+
+    _correr(monkeypatch, [metodo, imagen, "--kernel-size", "3", "-o", str(salida)])
+
+    entrada = cv2.imread(imagen, cv2.IMREAD_GRAYSCALE)
+    binaria = (entrada > 0).astype(np.uint8) * 255
+    esperado = operacion(binaria, kernel_square(3), 1)
+
+    np.testing.assert_array_equal(
+        cv2.imread(str(salida), cv2.IMREAD_GRAYSCALE), esperado
+    )
 
 
 def test_output_crea_los_directorios_que_faltan(imagen, tmp_path, monkeypatch):

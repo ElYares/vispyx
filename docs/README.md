@@ -8,7 +8,7 @@
 |---|---|
 | [system_usage.md](./system_usage.md) | Guía integral: instalación, modelo mental, pipeline completo, rendimiento y trampas |
 | [api_reference.md](./api_reference.md) | Los 28 símbolos públicos: firmas, contratos, dtypes y catálogo de errores |
-| [cli_reference.md](./cli_reference.md) | El comando `vispyx`: 17 métodos, todas las flags, códigos de salida |
+| [cli_reference.md](./cli_reference.md) | El comando `vispyx`: 20 métodos, todas las flags, códigos de salida |
 
 ## Para entender la morfología
 

@@ -23,7 +23,7 @@ vispyx/
 ├── preprocessing.py         apply_clahe (OpenCV)
 ├── segmentation.py          segment_otsu (skimage)
 ├── utils.py                 read_grayscale, show_image
-├── cli.py                   comando `vispyx`, 17 métodos
+├── cli.py                   comando `vispyx`, 20 métodos
 └── __init__.py              superficie pública, 28 símbolos
 ```
 
