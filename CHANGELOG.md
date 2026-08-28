@@ -13,10 +13,21 @@
   desde `validate_kernel` y ya dentro de la operacion. Vale para las cuatro
   formas, el disco incluido: sin esa validacion un `4` daria radio `2` y el
   mismo disco que un `5`, en silencio
-- `test/test_cli_main.py`: 30 tests sobre `main()`, que no tenia ninguno. Cubre
+- `test/test_cli_main.py`: 44 tests sobre `main()`, que no tenia ninguno. Cubre
   los 17 metodos de punta a punta, las flags, la creacion de directorios, los
   codigos de salida y los errores de lectura
-- cobertura de 93 a 137 tests
+- `test/test_invariants.py`: 193 tests que verifican las leyes clasicas de la
+  morfologia como **propiedad general** sobre imagenes aleatorias con semilla
+  fija, no como casos elegidos a mano. Idempotencia, dualidad por complemento,
+  orden (`erode ⊆ open ⊆ x ⊆ close ⊆ dilate`) y monotonia, en los dos dominios
+  de valores y una vez por cada forma de kernel
+- esos tests corren con kernel de **7**, no de 3 ni de 5: recien en 7 las cuatro
+  formas difieren entre si. Un guard falla si se baja la constante, para que la
+  degradacion de cuatro ramas a dos no pase en silencio
+- afirman sobre la imagen completa, sin marco de fondo. El reflejo preserva las
+  cuatro familias tambien en el borde; queda medido que pasar el padding a ceros
+  rompe 96 de estos tests y que pasarlo a `edge` no rompe ninguno
+- cobertura de 93 a 330 tests. La suite pasa de ~1.4 s a ~2.8 s
 
 ## 0.3.0
 
