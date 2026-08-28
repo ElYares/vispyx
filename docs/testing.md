@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **356 tests, 356 pasan, ~4.0 s** (Python 3.13.13, numpy
+Estado verificado: **364 tests, 364 pasan, ~4.0 s** (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -34,7 +34,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | las tres `run_*` que no encajan en el molde, con I/O real |
-| `test_preprocessing.py` | 7 | qué hace `apply_clahe` y que sus parámetros lleguen |
+| `test_preprocessing.py` | 15 | qué hace `apply_clahe`, sus parámetros y su validación |
 
 ## Qué se verifica de verdad
 
@@ -136,10 +136,11 @@ También quedan fijados los dos parámetros y el alias histórico
 `title_grid_size` — un typo que `preprocessing.py:14` conserva por
 compatibilidad y que nada amarraba: borrarlo no rompía ningún test.
 
-**Lo que sigue sin cubrirse:** `apply_clahe` no valida su entrada. Un array
-`float64`, uno de tres canales o una lista anidada salen como `cv2.error` de
-`clahe.cpp`, no como el `ValueError` que el resto del paquete garantiza. Es un
-hueco de contrato, no de tests: arreglarlo cambia comportamiento.
+La validación también quedó cubierta, incluido el caso que es fácil pasarse de
+largo: **CLAHE acepta `uint16`, no solo `uint8`**. OpenCV implementa `CV_8UC1` y
+`CV_16UC1`, y está verificado contra la versión instalada que `int16`, `int32`,
+`float32` y `float64` fallan dentro de `clahe.cpp`. Hay un test de `uint16`
+precisamente para que restringir la validación a `uint8` falle en vez de pasar.
 
 ### Ramas de validación
 
@@ -246,14 +247,13 @@ no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
 
 Si hay que elegir dónde poner el siguiente test, en este orden:
 
-1. La validación de entrada de `apply_clahe`: hoy filtra `cv2.error` en vez de
-   `ValueError`, contra la convención del resto del paquete
-2. `vpx_hitmiss` en el CLI — la única de las cuatro binarias que quedó fuera, y
+1. `vpx_hitmiss` en el CLI — la única de las cuatro binarias que quedó fuera, y
    necesita decidir cómo se expresan dos estructurantes en una línea de comandos
+2. `segment_otsu` y `read_grayscale` con imágenes reales, no solo sintéticas
 
 Hecho: el diferencial contra `morph_scipy.py`, la cobertura de `utils.py`, la de
 `main()`, los invariantes de `test_invariants.py`, el guardado fallido del CLI,
-las ramas de validación y `apply_clahe`.
+las ramas de validación, `apply_clahe` y su validación de entrada.
 
 ## Ver también
 

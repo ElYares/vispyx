@@ -95,3 +95,49 @@ def test_title_grid_size_is_the_historic_typo_alias(grid):
         apply_clahe(imagen, title_grid_size=grid),
         apply_clahe(imagen, tile_grid_size=grid),
     )
+
+
+def test_apply_clahe_accepts_uint16():
+    """OpenCV implementa CLAHE para ``CV_8UC1`` y ``CV_16UC1``, no solo uint8.
+
+    Verificado contra la version instalada: uint8 y uint16 pasan; ``int16``,
+    ``int32``, ``float32`` y ``float64`` fallan dentro de ``clahe.cpp``. La
+    validacion tiene que dejar pasar los dos que funcionan, no solo el comun.
+    """
+    imagen = (_imagen_de_dos_mitades().astype(np.uint16) * 257)
+
+    resultado = apply_clahe(imagen)
+
+    assert resultado.dtype == np.uint16
+    assert resultado.shape == imagen.shape
+
+
+def test_apply_clahe_rejects_non_2d_images():
+    with pytest.raises(ValueError, match="image must be a 2D array"):
+        apply_clahe(np.zeros((8, 8, 3), dtype=np.uint8))
+
+
+def test_apply_clahe_rejects_non_numeric_images():
+    with pytest.raises(ValueError, match="image must contain numeric values"):
+        apply_clahe(np.array([["a", "b"], ["c", "d"]]))
+
+
+@pytest.mark.parametrize("dtype", [np.float64, np.float32, np.int16, np.int32])
+def test_apply_clahe_rejects_dtypes_that_opencv_cannot_handle(dtype):
+    """Antes salian como ``cv2.error`` de ``clahe.cpp``, no como ``ValueError``.
+
+    Es la misma fuga que se cerro en el CLI con ``cv2.imwrite``: una excepcion
+    de la dependencia llegando cruda a quien llamo a ``vispyx``.
+    """
+    with pytest.raises(ValueError, match="image must be uint8 or uint16"):
+        apply_clahe(np.zeros((8, 8), dtype=dtype))
+
+
+def test_apply_clahe_accepts_nested_lists():
+    """``validate_grayscale_image`` normaliza con ``np.asarray`` antes de mirar.
+
+    Una lista anidada de enteros llega como ``int64`` y se rechaza por dtype, no
+    con el ``AttributeError`` o el ``cv2.error`` que salia antes.
+    """
+    with pytest.raises(ValueError, match="image must be uint8 or uint16"):
+        apply_clahe([[0, 1], [1, 0]])

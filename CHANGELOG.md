@@ -2,6 +2,17 @@
 
 ## No publicado
 
+- **cambio de contrato**: `apply_clahe` valida su entrada. Antes una imagen
+  `float64`, una de tres canales o una lista anidada salian como `cv2.error`
+  desde `clahe.cpp`; ahora salen como `ValueError`, igual que toda validacion
+  del paquete. Reusa `validate_grayscale_image`, asi que comparte los mensajes
+  `image must be a 2D array` e `image must contain numeric values`, y agrega
+  `image must be uint8 or uint16` — OpenCV solo implementa CLAHE para `CV_8UC1`
+  y `CV_16UC1`. El camino feliz no cambia
+- `preprocessing.py` pasa a importar de `morphology_common`. Es la unica arista
+  fuera de la morfologia y es deliberada: los mensajes de error son contrato
+  publico y no deben duplicarse. `common` sigue sin importar a nadie
+- cobertura de 356 a 364 tests
 - `test/test_preprocessing.py` reescrito: 7 tests en vez de 2. Los viejos
   miraban shape y tipo sobre ruido **sin semilla fija**, y esta medido lo poco
   que amarraban — con ellos, `apply_clahe` devolviendo la entrada sin tocar
