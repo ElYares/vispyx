@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **387 tests, 387 pasan, ~4.0 s** (Python 3.13.13, numpy
+Estado verificado: **422 tests, 422 pasan, ~4.0 s** (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -28,6 +28,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 |---|---|---|
 | `test_invariants.py` | 193 | las leyes de la morfología como propiedad general |
 | `test_cli_main.py` | 69 | el parser: flags, patrones, guardado y códigos de salida |
+| `test_edge_cases.py` | 35 | entradas degeneradas y los caminos que nadie recorría |
 | `test_segmentation.py` | 8 | `segment_otsu`: el umbral, el puente y su validación |
 | `test_morphology.py` | 47 | el núcleo algorítmico, binario y grayscale |
 | `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
@@ -179,12 +180,35 @@ La imagen de ese segundo test tiene una esquina mordida a propósito. **Sobre un
 bloque sólido, cruz y cuadrado erosionan idéntico** — la misma trampa que obliga
 a usar kernels de 7 en `test_invariants.py`.
 
-### Casos límite sin probar
+### Casos límite
 
-Imágenes vacías o de un píxel; kernels más grandes que la imagen; kernels no
-cuadrados (`3×5`); `max_iterations` explícito en `vpx_reconstruct` y
-`vpx_skeletonize` (solo se prueba el camino hasta convergencia);
-`iterations > 2`.
+Cubiertos en `test_edge_cases.py`. **Escribirlos encontró el peor bug de la
+suite hasta ahora**, y por eso la sección merece detalle.
+
+Una imagen vacía se comportaba de **cuatro maneras distintas**:
+
+| Función | Antes |
+|---|---|
+| las 17 `vpx_*`/`gray_*` con reflejo | `ValueError`, pero con el mensaje interno de numpy: `can't extend empty axis 0…` |
+| `vpx_skeletonize`, `vpx_thin` | **no fallaban**: devolvían `(0,0)`, porque Zhang-Suen usa padding de ceros y numpy sí lo acepta sobre un eje vacío |
+| `segment_otsu` | `IndexError` desde skimage |
+| `apply_clahe` | **devolvía `None`** con `(0,0)`, y **se colgaba** con `(0,5)` o `(5,0)` |
+
+El cuelgue no es un valor malo, es el proceso trabado. Y el `None` es justo lo
+que `0.3.0` erradicó de `read_grayscale`. `validate_kernel` ya rechazaba kernels
+vacíos; las imágenes no tenían el chequeo equivalente.
+
+**Si se quita esa validación, los tests de `apply_clahe` con `(0,5)` no fallan:
+cuelgan.** Mutar esta línea exige correr la suite con timeout — está avisado en
+el docstring de `TestImagenVacia`.
+
+Lo demás de la sección resultó sano y quedó fijado: imágenes de un píxel y de
+una sola fila, kernels más grandes que la imagen, kernels no cuadrados,
+`max_iterations` explícito e `iterations > 2` con conteos exactos.
+
+**Los kernels no cuadrados necesitan una cruz, no un bloque.** Sobre un bloque
+sólido `3×5` y `5×3` lo borran entero y dan lo mismo; sobre una cruz uno deja un
+segmento horizontal y el otro uno vertical, transpuestos.
 
 ### Propiedades matemáticas
 
@@ -262,16 +286,16 @@ no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
 
 Si hay que elegir dónde poner el siguiente test, en este orden:
 
-1. Los casos límite de la sección de abajo — imágenes vacías o de un píxel,
-   kernels más grandes que la imagen, kernels no cuadrados. Son caminos del
-   motor que nadie recorrió, así que es donde queda margen de **encontrar** un
-   bug, no solo de amarrar lo que ya funciona
-2. `segment_otsu` y `read_grayscale` con imágenes reales, no solo sintéticas
+1. `segment_otsu` y `read_grayscale` con imágenes reales, no solo sintéticas
+2. Borrar `cli.show_image`, que la cobertura demuestra que no ejecuta nadie —
+   pero unificar no es gratis: el de `utils.py` toma `cmap` y el de `cli.py`
+   tiene `figsize` y `tight_layout()`
 
 Hecho: el diferencial contra `morph_scipy.py`, la cobertura de `utils.py`, la de
 `main()`, los invariantes de `test_invariants.py`, el guardado fallido del CLI,
 las ramas de validación, `apply_clahe` y su validación de entrada,
-`vpx_hitmiss` por `--pattern`, y `segment_otsu` con su validación.
+`vpx_hitmiss` por `--pattern`, `segment_otsu` con su validación, y los casos
+límite.
 
 ## Ver también
 

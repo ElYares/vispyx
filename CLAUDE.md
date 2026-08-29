@@ -71,6 +71,10 @@ despacho con `_run_binary_method` o `_run_grayscale_method`, y
 - `--kernel-shape disk` deriva el radio como `size // 2`, porque `kernel_disk`
   toma radio y no lado. La paridad se valida aparte en `cli.py`: sin eso, un `4`
   daría el mismo disco que un `5` en silencio
+- **Una imagen vacía se rechaza con `image must not be empty`**, igual que un
+  kernel vacío. Antes cada función fallaba distinto y `apply_clahe` **se
+  colgaba**. Si se quita esa validación, los tests de imagen vacía no fallan:
+  cuelgan
 - `iterations=True` es rechazado a propósito, aunque `bool` sea subclase de
   `int`. Los enteros de NumPy sí se aceptan
 - `read_grayscale` lanza: `FileNotFoundError` si no hay archivo, `ValueError` si

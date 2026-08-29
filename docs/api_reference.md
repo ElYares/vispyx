@@ -225,6 +225,7 @@ son estables (los tests dependen de ellos literalmente).
 | Mensaje | Origen |
 |---|---|
 | `image must be a 2D array` | `validate_binary_image`, `validate_grayscale_image` |
+| `image must not be empty` | `validate_binary_image`, `validate_grayscale_image` |
 | `image must contain numeric values` | `validate_grayscale_image` (dtype no numérico) |
 | `image must be uint8 or uint16` | `apply_clahe` (OpenCV solo implementa esos dos) |
 | `iterations must be a positive integer` | `validate_iterations` |

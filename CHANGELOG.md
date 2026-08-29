@@ -2,6 +2,19 @@
 
 ## No publicado
 
+- **fix**: una imagen vacia se comportaba de cuatro maneras distintas. Las 17
+  `vpx_*`/`gray_*` con padding por reflejo lanzaban `ValueError` pero con el
+  mensaje interno de numpy (`can't extend empty axis 0...`); `vpx_skeletonize` y
+  `vpx_thin` **no fallaban** y devolvian `(0, 0)`, porque Zhang-Suen usa padding
+  de ceros; `segment_otsu` lanzaba `IndexError` desde skimage; y **`apply_clahe`
+  devolvia `None` con `(0, 0)` y se colgaba indefinidamente con `(0, 5)` o
+  `(5, 0)`**. Ahora las cuatro lanzan `ValueError: image must not be empty`,
+  desde `validate_binary_image` y `validate_grayscale_image`. `validate_kernel`
+  ya rechazaba kernels vacios; las imagenes no tenian el chequeo equivalente
+- `test/test_edge_cases.py`: 35 tests de entradas degeneradas y caminos que
+  nadie recorria — imagenes de un pixel y de una sola fila, kernels mas grandes
+  que la imagen, kernels no cuadrados, `max_iterations` explicito e
+  `iterations > 2`. Cobertura de 387 a 422 tests
 - **cambio de contrato**: `segment_otsu` valida su entrada. Antes una imagen de
   tres canales **no fallaba** — skimage emitia un `UserWarning` que nadie ve y
   devolvia un resultado sin sentido; una lista anidada salia como
