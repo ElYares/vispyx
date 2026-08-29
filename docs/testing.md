@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **364 tests, 364 pasan, ~4.0 s** (Python 3.13.13, numpy
+Estado verificado: **377 tests, 377 pasan, ~4.0 s** (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -27,7 +27,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | Archivo | Tests | Qué fija |
 |---|---|---|
 | `test_invariants.py` | 193 | las leyes de la morfología como propiedad general |
-| `test_cli_main.py` | 54 | el parser: flags, guardado y códigos de salida |
+| `test_cli_main.py` | 67 | el parser: flags, patrones, guardado y códigos de salida |
 | `test_morphology.py` | 47 | el núcleo algorítmico, binario y grayscale |
 | `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
 | `test_utils.py` | 9 | el lector de imágenes y `show_image` |
@@ -84,13 +84,13 @@ Lo que sí queda amarrado:
 ## Lo que cubre `test_cli_main.py`
 
 `main()` son 222 líneas de parseo y despacho, y hasta la `0.3.0` no tenían un
-solo test. Ahora sí: los **20 métodos** corren de punta a punta escribiendo a
+solo test. Ahora sí: los **21 métodos** corren de punta a punta escribiendo a
 disco, más las flags (`--output`, `--kernel`/`--kernel-size`, `--kernel-shape`,
 `--iterations`, `--clip`/`--grid`), la creación de directorios, el mensaje
 `"Imagen procesada. No se guardó."`, los códigos de salida `2` de `argparse`, y
 que los errores de lectura sean los mismos que ve quien usa la API.
 
-**Por qué la parametrización sobre los 20 métodos vale más de lo que parece**:
+**Por qué la parametrización sobre los 21 métodos vale más de lo que parece**:
 si alguien agrega un método a la lista `methods` y olvida su rama de despacho,
 ese test falla. Es la razón por la que la rama
 `else: raise ValueError("Método no reconocido")` **se conserva** pese a ser

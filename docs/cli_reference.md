@@ -46,7 +46,7 @@ El CLI **no usa subparsers**. Es un único `ArgumentParser` plano donde el
 ```text
 clahe   otsu
 vpx_erode   vpx_dilate   vpx_open   vpx_close   vpx_gradient
-vpx_tophat   vpx_blackhat   vpx_boundary
+vpx_tophat   vpx_blackhat   vpx_boundary   vpx_hitmiss
 vpx_reconstruct   vpx_skeletonize   vpx_thin
 gray_erode   gray_dilate   gray_open   gray_close
 gray_gradient   gray_tophat   gray_blackhat
@@ -134,6 +134,7 @@ por `vispyx otsu`.
 | `vpx_tophat` | `vpx_tophat(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
 | `vpx_blackhat` | `vpx_blackhat(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
 | `vpx_boundary` | `vpx_boundary(binary, kernel, iterations)` | `--kernel-size`, `--kernel-shape`, `--iterations` |
+| `vpx_hitmiss` | `vpx_hitmiss(binary, hit, miss)` del patrón elegido | `--pattern` (**obligatoria**) |
 | `vpx_reconstruct` | `vpx_reconstruct(marker, mask, kernel, max_iterations)` | `--mask`, `--kernel-size`, `--kernel-shape`, `--max-iterations` |
 | `vpx_skeletonize` | `vpx_skeletonize(binary, max_iterations)` | `--max-iterations` |
 | `vpx_thin` | `vpx_thin(binary, iterations)` | `--iterations` |
@@ -150,6 +151,36 @@ Detalles que sorprenden si no se leen:
   Los cuatro generadores de `vispyx.kernels` son alcanzables desde la línea de
   comandos; lo único que sigue fuera de alcance son los kernels no cuadrados
   (`3×5`), que la API acepta y la flag no puede expresar
+
+## `--pattern`: hit-or-miss sin escribir kernels
+
+`vpx_hitmiss` toma **dos** estructurantes y no toma `iterations`, así que no
+entra en el molde de `--kernel-shape`, que expresa una sola forma. El CLI lo
+expone por patrones con nombre, cada uno con su par `hit`/`miss` ya escrito.
+
+| `--pattern` | Detecta |
+|---|---|
+| `corner` | las cuatro esquinas: la unión de las cuatro orientaciones |
+| `corner-nw`, `corner-ne`, `corner-se`, `corner-sw` | una esquina cada uno |
+| `isolated` | píxeles sin ningún vecino, **ni siquiera en diagonal** |
+
+```bash
+vispyx vpx_hitmiss mascara.pgm --pattern corner -o esquinas.pgm
+```
+
+- **`--pattern` es obligatoria** para `vpx_hitmiss`: omitirla termina con código
+  `2` y el mensaje `--pattern es obligatorio para vpx_hitmiss`
+- `--kernel-size`, `--kernel-shape` e `--iterations` se **ignoran**, igual que
+  `vpx_skeletonize` ya ignora `--kernel-size`
+- los pares del catálogo viven en `PATTERNS`, en `cli.py`. Cumplen por
+  construcción las tres reglas de `validate_hitmiss_kernels` — misma forma, sin
+  solapamiento, y con al menos un elemento activo cada uno — y hay un test que
+  recorre el catálogo entero para que un par inválido falle al agregarlo, no al
+  usarlo
+- **para un par propio hay que usar la API de Python.** El CLI no expresa pares
+  arbitrarios a propósito: derivar el `miss` del complemento del `hit` falla con
+  `--kernel-shape square`, que es el default, porque el complemento de un
+  cuadrado de unos es todo ceros
 
 ## Salida
 

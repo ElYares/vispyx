@@ -26,6 +26,7 @@ from vispyx.morphology import (
     vpx_dilate,
     vpx_erode,
     vpx_gradient,
+    vpx_hitmiss,
     vpx_open,
     vpx_reconstruct,
     vpx_skeletonize,
@@ -51,6 +52,59 @@ def show_image(image, title="Resultado"):
 
 
 KERNEL_SHAPES = ["square", "cross", "diamond", "disk"]
+
+
+# Pares hit/miss del catalogo de `--pattern`. Cada uno cumple por construccion
+# las tres reglas de `validate_hitmiss_kernels`: misma forma, sin solapamiento y
+# con al menos un elemento activo cada uno.
+_ESQUINA_HIT = np.array([[0, 0, 0], [0, 1, 1], [0, 1, 1]], dtype=np.uint8)
+_ESQUINA_MISS = np.array([[1, 1, 1], [1, 0, 0], [1, 0, 0]], dtype=np.uint8)
+
+# El par base mira al noroeste; los otros tres salen rotandolo.
+_ESQUINAS = {
+    "corner-nw": 0,
+    "corner-ne": 1,
+    "corner-se": 2,
+    "corner-sw": 3,
+}
+
+PATTERNS = {
+    nombre: (np.rot90(_ESQUINA_HIT, -giro), np.rot90(_ESQUINA_MISS, -giro))
+    for nombre, giro in _ESQUINAS.items()
+}
+PATTERNS["isolated"] = (
+    np.array([[0, 0, 0], [0, 1, 0], [0, 0, 0]], dtype=np.uint8),
+    np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]], dtype=np.uint8),
+)
+
+# `corner` no es un par: combina las cuatro orientaciones. La composicion vive
+# aca y no en `morphology_binary.py`, que sigue exponiendo la operacion pura.
+PATTERN_NAMES = ["corner"] + sorted(PATTERNS)
+
+
+METHODS = [
+    "clahe",
+    "otsu",
+    "vpx_erode",
+    "vpx_dilate",
+    "vpx_open",
+    "vpx_close",
+    "vpx_gradient",
+    "vpx_tophat",
+    "vpx_blackhat",
+    "vpx_boundary",
+    "vpx_hitmiss",
+    "vpx_reconstruct",
+    "vpx_skeletonize",
+    "vpx_thin",
+    "gray_erode",
+    "gray_dilate",
+    "gray_open",
+    "gray_close",
+    "gray_gradient",
+    "gray_tophat",
+    "gray_blackhat",
+]
 
 
 def _build_kernel(kernel_size, kernel_shape="square"):
@@ -80,6 +134,24 @@ def run_clahe(image_path, clip_limit=2.0, grid=8):
 def run_otsu(image_path):
     img = read_grayscale(image_path)
     return segment_otsu(img)
+
+
+def run_vpx_hitmiss(image_path, pattern):
+    """`vpx_hitmiss` no entra en `_run_binary_method`: toma dos kernels y no toma
+    `iterations`. Por eso tiene su propia `run_*`, como `reconstruct` y `thin`.
+    """
+    img = read_grayscale(image_path)
+    binary = (img > 0).astype(np.uint8) * 255
+    if pattern == "corner":
+        resultado = np.zeros_like(binary)
+        for nombre in _ESQUINAS:
+            hit, miss = PATTERNS[nombre]
+            resultado = np.maximum(resultado, vpx_hitmiss(binary, hit, miss))
+        return resultado
+    if pattern not in PATTERNS:
+        raise ValueError(f"Patron no reconocido: {pattern}")
+    hit, miss = PATTERNS[pattern]
+    return vpx_hitmiss(binary, hit, miss)
 
 
 def run_vpx_reconstruct(marker_path, mask_path, kernel_size=3, max_iterations=None, kernel_shape="square"):
@@ -123,32 +195,10 @@ def _run_grayscale_method(image_path, method, kernel_size=3, iterations=1, kerne
 
 
 def main():
-    methods = [
-        "clahe",
-        "otsu",
-        "vpx_erode",
-        "vpx_dilate",
-        "vpx_open",
-        "vpx_close",
-        "vpx_gradient",
-        "vpx_tophat",
-        "vpx_blackhat",
-        "vpx_boundary",
-        "vpx_reconstruct",
-        "vpx_skeletonize",
-        "vpx_thin",
-        "gray_erode",
-        "gray_dilate",
-        "gray_open",
-        "gray_close",
-        "gray_gradient",
-        "gray_tophat",
-        "gray_blackhat",
-    ]
     parser = argparse.ArgumentParser(description="CLI de procesamiento de imágenes con vispyx")
     parser.add_argument(
         "method",
-        choices=methods,
+        choices=METHODS,
         help="Método de procesamiento",
     )
 
@@ -165,6 +215,12 @@ def main():
         choices=KERNEL_SHAPES,
         default="square",
         help="Forma del elemento estructurante (para disk, el radio es --kernel-size // 2)",
+    )
+    parser.add_argument(
+        "--pattern",
+        choices=PATTERN_NAMES,
+        default=None,
+        help="Patron a detectar con vpx_hitmiss. `corner` combina las cuatro orientaciones",
     )
     parser.add_argument("--iterations", type=int, default=1, help="Número de iteraciones")
     parser.add_argument("--max-iterations", type=int, default=None, help="Máximo de iteraciones para reconstruccion binaria")
@@ -191,6 +247,10 @@ def main():
         result = _run_binary_method(args.image_path, vpx_blackhat, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     elif args.method == "vpx_boundary":
         result = _run_binary_method(args.image_path, vpx_boundary, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
+    elif args.method == "vpx_hitmiss":
+        if not args.pattern:
+            parser.error("--pattern es obligatorio para vpx_hitmiss")
+        result = run_vpx_hitmiss(args.image_path, args.pattern)
     elif args.method == "vpx_reconstruct":
         if not args.mask_path:
             parser.error("--mask es obligatorio para vpx_reconstruct")
