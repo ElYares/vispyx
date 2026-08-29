@@ -29,7 +29,7 @@ Requiere Python `>= 3.7`. Dependencias declaradas: `opencv-python`, `numpy`,
 Verificar que quedó bien:
 
 ```bash
-python -c "import vispyx; print(vispyx.__version__)"   # 0.3.0
+python -c "import vispyx; print(vispyx.__version__)"   # 0.4.0
 vispyx --help
 pytest -q                                              # 49 passed
 ```

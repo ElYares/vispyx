@@ -26,7 +26,7 @@ from vispyx.preprocessing import apply_clahe
 from vispyx.segmentation import segment_otsu
 from vispyx.utils import read_grayscale, show_image
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "__version__",

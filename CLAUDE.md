@@ -1,7 +1,7 @@
 # vispyx
 
 Paquete Python de procesamiento de imágenes con un núcleo de morfología
-matemática **implementado desde cero**. Versión `0.3.0`, estado alpha.
+matemática **implementado desde cero**. Versión `0.4.0`, estado alpha.
 
 ## Regla que manda sobre todo
 
