@@ -10,6 +10,8 @@ def validate_binary_image(image):
     image = np.asarray(image)
     if image.ndim != 2:
         raise ValueError("image must be a 2D array")
+    if image.size == 0:
+        raise ValueError("image must not be empty")
     return (image > 0).astype(np.uint8)
 
 
@@ -18,6 +20,8 @@ def validate_grayscale_image(image):
     image = np.asarray(image)
     if image.ndim != 2:
         raise ValueError("image must be a 2D array")
+    if image.size == 0:
+        raise ValueError("image must not be empty")
     if not np.issubdtype(image.dtype, np.number):
         raise ValueError("image must contain numeric values")
     return image
