@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **422 tests, 422 pasan, ~4.0 s** (Python 3.13.13, numpy
+Estado verificado: **425 tests, 425 pasan, ~4.0 s** (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -27,12 +27,12 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | Archivo | Tests | Qué fija |
 |---|---|---|
 | `test_invariants.py` | 193 | las leyes de la morfología como propiedad general |
-| `test_cli_main.py` | 69 | el parser: flags, patrones, guardado y códigos de salida |
+| `test_cli_main.py` | 71 | el parser: flags, patrones, guardado y códigos de salida |
 | `test_edge_cases.py` | 35 | entradas degeneradas y los caminos que nadie recorría |
 | `test_segmentation.py` | 8 | `segment_otsu`: el umbral, el puente y su validación |
 | `test_morphology.py` | 47 | el núcleo algorítmico, binario y grayscale |
 | `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
-| `test_utils.py` | 9 | el lector de imágenes y `show_image` |
+| `test_utils.py` | 10 | el lector de imágenes y `show_image` |
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | las tres `run_*` que no encajan en el molde, con I/O real |
@@ -80,7 +80,7 @@ Lo que sí queda amarrado:
 - Toda entrada inválida produce `ValueError`, nunca `TypeError` ni `assert`.
 - `vispyx.morphology` debe seguir funcionando como import path: los tests del
   núcleo importan desde la fachada, no desde `morphology_binary`.
-- `vispyx.__version__ == "0.3.0"` está clavado en un test: **subir la versión
+- `vispyx.__version__ == "0.4.0"` está clavado en un test: **subir la versión
   rompe la suite si no se actualiza también ahí**.
 
 ## Lo que cubre `test_cli_main.py`
@@ -124,12 +124,23 @@ nada afirmaba qué producía. La cobertura mide ejecución, no verificación.
 
 ### Cobertura de líneas
 
-Medida con `coverage`: **98%**, y las 7 líneas sin cubrir son **todas** de
-`--show` — el cuerpo de `cli.show_image` y su llamada. Está excluido a propósito:
-fuerza el backend `TkAgg` al importar el módulo y necesita display.
+Medida con `coverage`: **100%**, sin líneas sin ejecutar.
 
-Ese dato tiene una segunda lectura: **`cli.show_image` no lo ejecuta nadie**.
-Es una copia del de `utils.py`, que sí está cubierto. Deuda anotada, no resuelta.
+Llegar ahí resolvió una duplicación que la propia medición había delatado:
+`cli.py` tenía **su propia copia** de `show_image`, y la cobertura la mostraba
+con **cero ejecuciones** mientras la de `utils.py` sí estaba cubierta. Ahora hay
+una sola, y `figsize` — lo único que la copia aportaba — es un parámetro.
+
+`--show` sigue sin poder ejercitarse de verdad: fuerza el backend `TkAgg` al
+importar el módulo y necesita display. Lo que sí se fija es que **despache a esa
+única implementación**, con un test que reemplaza `show_image` y comprueba los
+argumentos, más otro que afirma que `cli.show_image is utils.show_image` para
+que la copia no vuelva.
+
+**El número 100% no significa que todo esté verificado.** Este mismo repo lo
+demostró: `segmentation.py` marcaba 100% mientras `segment_otsu` aceptaba una
+imagen RGB y devolvía un resultado sin sentido. La cobertura dice qué se
+ejecuta, no qué se afirma.
 
 Las dos ramas defensivas que `argparse` hace inalcanzables —
 `Patron no reconocido` y `Método no reconocido` — sí están cubiertas, llamando a
@@ -287,9 +298,9 @@ no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
 Si hay que elegir dónde poner el siguiente test, en este orden:
 
 1. `segment_otsu` y `read_grayscale` con imágenes reales, no solo sintéticas
-2. Borrar `cli.show_image`, que la cobertura demuestra que no ejecuta nadie —
-   pero unificar no es gratis: el de `utils.py` toma `cmap` y el de `cli.py`
-   tiene `figsize` y `tight_layout()`
+2. `apply_clahe` con `uint16` de punta a punta desde el CLI: la API lo acepta,
+   pero `read_grayscale` siempre devuelve `uint8`, así que ese camino no se
+   ejercita fuera de un test directo
 
 Hecho: el diferencial contra `morph_scipy.py`, la cobertura de `utils.py`, la de
 `main()`, los invariantes de `test_invariants.py`, el guardado fallido del CLI,

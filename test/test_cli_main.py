@@ -251,6 +251,32 @@ def test_hitmiss_ignora_las_flags_de_kernel(imagen_con_esquinas, tmp_path, monke
     )
 
 
+def test_show_llama_al_unico_show_image_del_paquete(imagen, monkeypatch):
+    """``--show`` era el unico camino del CLI sin cubrir.
+
+    No se puede ejercitar de verdad: `cli.py` fuerza el backend `TkAgg` al
+    importar y hace falta display. Lo que si se puede fijar es que despache al
+    `show_image` de `utils.py` — antes `cli.py` tenia **su propia copia**, que
+    la cobertura mostraba con cero ejecuciones.
+    """
+    llamadas = []
+    monkeypatch.setattr(cli, "show_image", lambda img, **kw: llamadas.append((img, kw)))
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "--show"])
+
+    assert len(llamadas) == 1
+    img, kw = llamadas[0]
+    assert kw == {"title": "vpx_erode", "figsize": (8, 6)}
+    assert img.shape == (16, 16)
+
+
+def test_show_image_es_el_mismo_objeto_en_cli_y_en_utils():
+    """La duplicacion que este test impide que vuelva."""
+    from vispyx.utils import show_image as desde_utils
+
+    assert cli.show_image is desde_utils
+
+
 def test_output_crea_los_directorios_que_faltan(imagen, tmp_path, monkeypatch):
     salida = tmp_path / "sub" / "otro" / "resultado.pgm"
     assert not salida.parent.exists()

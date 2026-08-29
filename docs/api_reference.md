@@ -1,6 +1,6 @@
 # API Reference
 
-Referencia de la API pública de `vispyx` (`0.3.0`). Todo lo listado aquí se
+Referencia de la API pública de `vispyx` (`0.4.0`). Todo lo listado aquí se
 importa directamente desde el paquete raíz:
 
 ```python
@@ -212,10 +212,16 @@ manda a revisar una ruta que estaba bien.
 **El CLI usa esta misma función**, así que el error es idéntico se entre por
 Python o por la línea de comandos.
 
-### `show_image(image, title="Imagen", cmap="gray")`
+### `show_image(image, title="Imagen", cmap="gray", figsize=None)`
 
 `plt.imshow` + `title` + `axis("off")` + `plt.show()`. Devuelve `None`, es puro
 efecto secundario. Requiere un backend de matplotlib con display.
+
+`figsize` crea una figura propia de ese tamaño y ajusta los márgenes con
+`tight_layout`. Omitirlo dibuja sobre la figura activa, que es el comportamiento
+histórico y el que espera un notebook. **Es la única implementación del
+paquete**: `cli.py` tenía una copia con el tamaño fijo en `(8, 6)`, y ahora pasa
+ese valor por el parámetro.
 
 ## Catálogo de errores
 
