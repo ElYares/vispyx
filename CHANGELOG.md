@@ -2,6 +2,21 @@
 
 ## No publicado
 
+- **cambio de contrato**: `segment_otsu` valida su entrada. Antes una imagen de
+  tres canales **no fallaba** — skimage emitia un `UserWarning` que nadie ve y
+  devolvia un resultado sin sentido; una lista anidada salia como
+  `AttributeError` y un dtype no numerico como `UFuncTypeError`. Ahora los tres
+  son `ValueError`, reusando `validate_grayscale_image`, y las **listas
+  anidadas funcionan**, igual que en las `gray_*` desde `0.2.1`
+- `test/test_segmentation.py`: 8 tests. `segmentation.py` era el ultimo modulo
+  del paquete sin un solo test funcional, y marcaba **100% de cobertura de
+  lineas** porque el test de punta a punta del CLI corre `otsu` sin afirmar nada
+  sobre el resultado
+- dos tests para las ramas defensivas que `argparse` hace inalcanzables:
+  `Patron no reconocido` en `run_vpx_hitmiss` y `Método no reconocido` en
+  `main()`. Con eso, las unicas lineas sin cubrir del paquete son las de
+  `--show`, excluido a proposito porque necesita display
+- cobertura de 377 a 387 tests
 - `vpx_hitmiss` en el CLI por `--pattern`, con patrones de nombre en vez de dos
   kernels sueltos: `corner` (las cuatro esquinas), `corner-nw`, `corner-ne`,
   `corner-se`, `corner-sw` e `isolated`. El CLI pasa de 20 a 21 metodos y

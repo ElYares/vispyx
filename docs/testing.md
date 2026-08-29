@@ -9,7 +9,7 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **377 tests, 377 pasan, ~4.0 s** (Python 3.13.13, numpy
+Estado verificado: **387 tests, 387 pasan, ~4.0 s** (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -27,7 +27,8 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | Archivo | Tests | Qué fija |
 |---|---|---|
 | `test_invariants.py` | 193 | las leyes de la morfología como propiedad general |
-| `test_cli_main.py` | 67 | el parser: flags, patrones, guardado y códigos de salida |
+| `test_cli_main.py` | 69 | el parser: flags, patrones, guardado y códigos de salida |
+| `test_segmentation.py` | 8 | `segment_otsu`: el umbral, el puente y su validación |
 | `test_morphology.py` | 47 | el núcleo algorítmico, binario y grayscale |
 | `test_reference_scipy.py` | 29 | diferencial contra la implementación de referencia en SciPy |
 | `test_utils.py` | 9 | el lector de imágenes y `show_image` |
@@ -114,11 +115,25 @@ Reales, verificados leyendo la suite completa.
 
 ### Módulos sin ningún test
 
-- **`segmentation.py`**: `segment_otsu` solo aparece nombrada dentro del set
-  `expected_symbols`. Nunca se invoca. Ni umbral, ni binarizado, ni dtype.
-`utils.py` dejó de estar en esta lista: `test_utils.py` cubre las dos funciones,
-incluida la distinción entre archivo ausente e ilegible, y que el CLI use ese
-mismo lector.
+Ninguno. `segmentation.py` fue el último en salir de esta lista, y su caso vale
+como advertencia sobre el número de cobertura: **marcaba 100% de líneas mientras
+`segment_otsu` aceptaba una imagen RGB y devolvía un resultado sin sentido**. Sus
+líneas se ejecutaban porque el test de punta a punta del CLI corre `otsu`, pero
+nada afirmaba qué producía. La cobertura mide ejecución, no verificación.
+
+### Cobertura de líneas
+
+Medida con `coverage`: **98%**, y las 7 líneas sin cubrir son **todas** de
+`--show` — el cuerpo de `cli.show_image` y su llamada. Está excluido a propósito:
+fuerza el backend `TkAgg` al importar el módulo y necesita display.
+
+Ese dato tiene una segunda lectura: **`cli.show_image` no lo ejecuta nadie**.
+Es una copia del de `utils.py`, que sí está cubierto. Deuda anotada, no resuelta.
+
+Las dos ramas defensivas que `argparse` hace inalcanzables —
+`Patron no reconocido` y `Método no reconocido` — sí están cubiertas, llamando a
+la API interna directamente. La segunda se alcanza inyectando un método en
+`METHODS`, que es exactamente el escenario del que protege.
 
 ### `preprocessing.py`
 
@@ -247,13 +262,16 @@ no implementa: `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`,
 
 Si hay que elegir dónde poner el siguiente test, en este orden:
 
-1. `vpx_hitmiss` en el CLI — la única de las cuatro binarias que quedó fuera, y
-   necesita decidir cómo se expresan dos estructurantes en una línea de comandos
+1. Los casos límite de la sección de abajo — imágenes vacías o de un píxel,
+   kernels más grandes que la imagen, kernels no cuadrados. Son caminos del
+   motor que nadie recorrió, así que es donde queda margen de **encontrar** un
+   bug, no solo de amarrar lo que ya funciona
 2. `segment_otsu` y `read_grayscale` con imágenes reales, no solo sintéticas
 
 Hecho: el diferencial contra `morph_scipy.py`, la cobertura de `utils.py`, la de
 `main()`, los invariantes de `test_invariants.py`, el guardado fallido del CLI,
-las ramas de validación, `apply_clahe` y su validación de entrada.
+las ramas de validación, `apply_clahe` y su validación de entrada,
+`vpx_hitmiss` por `--pattern`, y `segment_otsu` con su validación.
 
 ## Ver también
 
