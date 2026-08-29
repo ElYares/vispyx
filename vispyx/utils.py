@@ -31,11 +31,20 @@ def read_grayscale(path):
     return image
 
 
-def show_image(image, title='Imagen', cmap='gray'):
+def show_image(image, title='Imagen', cmap='gray', figsize=None):
     """
     Muestra una imagen usando matplotlib.
+
+    `figsize` crea una figura propia de ese tamaño y ajusta los márgenes con
+    `tight_layout`. Omitirlo dibuja sobre la figura activa, que es el
+    comportamiento histórico y el que espera un notebook. El CLI la pasa porque
+    abre una ventana suelta y necesita un tamaño razonable.
     """
+    if figsize is not None:
+        plt.figure(figsize=figsize)
     plt.imshow(image, cmap=cmap)
     plt.title(title)
     plt.axis('off')
+    if figsize is not None:
+        plt.tight_layout()
     plt.show()

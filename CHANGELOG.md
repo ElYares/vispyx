@@ -1,7 +1,30 @@
 # Changelog
 
-## No publicado
+## 0.4.0
 
+**El CLI queda completo y el paquete deja de filtrar excepciones ajenas.**
+
+Las cuatro operaciones binarias que faltaban ya se alcanzan desde la linea de
+comandos, y ninguna funcion deja escapar un error de OpenCV, scikit-image o
+numpy: toda entrada invalida sale como `ValueError` con un mensaje del paquete.
+
+Tres cambios de contrato, todos detallados abajo: `apply_clahe` y `segment_otsu`
+pasan a validar su entrada, y `--kernel-size` par falla con otro mensaje. Ningun
+camino feliz cambia.
+
+Cobertura de 137 a 425 tests, y de lineas al **100%**.
+
+- `cli.py` deja de tener su propia copia de `show_image`. Era identica salvo por
+  `figsize=(8, 6)` y `tight_layout()`, y **la cobertura la mostraba con cero
+  ejecuciones** mientras la de `utils.py` si estaba cubierta. Ahora hay una
+  sola, y `figsize` es un parametro opcional: omitirlo conserva el
+  comportamiento historico de dibujar sobre la figura activa
+- de paso sale `import matplotlib.pyplot as plt` de `cli.py`, que solo usaba esa
+  copia. `matplotlib.use("TkAgg")` se queda: es lo que `--show` necesita
+- **cobertura de lineas al 100%**. `--show` sigue sin poder ejercitarse (necesita
+  display), pero si se fija que despache a la unica implementacion, y que
+  `cli.show_image is utils.show_image` para que la copia no vuelva
+- cobertura de 422 a 425 tests
 - **fix**: una imagen vacia se comportaba de cuatro maneras distintas. Las 17
   `vpx_*`/`gray_*` con padding por reflejo lanzaban `ValueError` pero con el
   mensaje interno de numpy (`can't extend empty axis 0...`); `vpx_skeletonize` y

@@ -35,20 +35,11 @@ from vispyx.morphology import (
 )
 from vispyx.preprocessing import apply_clahe
 from vispyx.segmentation import segment_otsu
-from vispyx.utils import read_grayscale
+from vispyx.utils import read_grayscale, show_image
 
+# Va despues de importar `vispyx.utils`, que ya cargo `pyplot`: `matplotlib.use`
+# cambia el backend igual, y el CLI necesita uno interactivo para `--show`.
 matplotlib.use("TkAgg")  # Forzar backend seguro y visualizable
-import matplotlib.pyplot as plt
-
-
-def show_image(image, title="Resultado"):
-    """Muestra una imagen usando matplotlib."""
-    plt.figure(figsize=(8, 6))
-    plt.imshow(image, cmap="gray")
-    plt.title(title)
-    plt.axis("off")
-    plt.tight_layout()
-    plt.show()
 
 
 KERNEL_SHAPES = ["square", "cross", "diamond", "disk"]
@@ -311,7 +302,7 @@ def main():
         print(f"Imagen guardada en: {args.output}")
 
     if args.show:
-        show_image(result, title=args.method)
+        show_image(result, title=args.method, figsize=(8, 6))
 
     if not args.output:
         print("Imagen procesada. No se guardó.")

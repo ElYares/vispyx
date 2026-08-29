@@ -94,3 +94,34 @@ def test_show_image_dibuja_sin_backend_interactivo(tmp_path, monkeypatch):
     assert show_image(np.zeros((4, 4), dtype=np.uint8), title="prueba") is None
     assert mostradas == [True]
     plt.close("all")
+
+
+def test_show_image_solo_crea_figura_propia_si_le_dan_figsize(monkeypatch):
+    """`figsize` es lo unico que la copia de `cli.py` aportaba.
+
+    Sin el, `show_image` dibuja sobre la figura activa — el comportamiento
+    historico, y el que espera un notebook. El CLI lo pasa porque abre una
+    ventana suelta.
+    """
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    figuras = []
+    original = plt.figure  # sin esto, el reemplazo se llamaria a si mismo
+    monkeypatch.setattr(plt, "show", lambda *a, **k: None)
+    monkeypatch.setattr(plt, "figure", lambda *a, **k: (figuras.append(k), original(*a, **k))[1])
+
+    imagen = np.zeros((4, 4), dtype=np.uint8)
+
+    # `plt.imshow` crea una figura solo si no hay ninguna activa, asi que el
+    # conteo de llamadas no distingue nada: lo que separa los dos casos es si
+    # alguna de ellas lleva `figsize`.
+    show_image(imagen)
+    assert [f for f in figuras if "figsize" in f] == []
+
+    plt.close("all")
+    figuras.clear()
+
+    show_image(imagen, figsize=(8, 6))
+    assert [f for f in figuras if "figsize" in f] == [{"figsize": (8, 6)}]
+    plt.close("all")
