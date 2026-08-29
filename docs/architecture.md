@@ -13,7 +13,7 @@ modificar el paquete, no para quien lo usa.
         |                     |                     |
    vispyx/cli.py      vispyx/morphology.py    preprocessing.py
    (21 métodos)       fachada de compat.      segmentation.py
-        |                     |                utils.py
+        |                     |                utils.py (sin deps)
         |          +----------+----------+          |
         |          |                     |          |
         |   morphology_binary.py   morphology_grayscale.py    |
@@ -28,11 +28,12 @@ Regla de dependencias: `morphology_common` no importa a nadie del paquete. Los
 dos módulos de morfología importan solo de `common`. `morphology.py` no importa
 lógica, solo reagrupa. El CLI importa de la fachada.
 
-`preprocessing.py` también importa de `common`, y es la única arista fuera de la
-morfología. Es deliberada: `apply_clahe` valida con `validate_grayscale_image`
-en vez de repetir sus mensajes, que son contrato público y no deben duplicarse.
-La regla que importa — que `common` no dependa de nadie — se mantiene, y no hay
-ciclo. `segmentation.py` y `utils.py` siguen sin depender de nada del paquete.
+`preprocessing.py` y `segmentation.py` también importan de `common`. Es
+deliberado: `apply_clahe` y `segment_otsu` validan con
+`validate_grayscale_image` en vez de repetir sus mensajes, que son contrato
+público y no deben duplicarse. La regla que importa — que `common` no dependa de
+nadie — se mantiene, y no hay ciclo. `utils.py` sigue sin depender de nada del
+paquete.
 
 ## Los tres archivos que importan
 

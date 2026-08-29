@@ -164,14 +164,25 @@ un array con el mismo shape y dtype de la entrada.
 ### `segment_otsu(image)`
 
 ```python
-thresh = threshold_otsu(image)      # skimage.filters
-binary = image > thresh             # umbralización en NumPy puro
+img = validate_grayscale_image(image)
+thresh = threshold_otsu(img)        # skimage.filters
+binary = img > thresh               # umbralización en NumPy puro
 return binary.astype(np.uint8) * 255
 ```
 
 Devuelve `uint8` en `{0, 255}`. El umbral viene de scikit-image; la
-umbralización no usa `cv2.threshold`. Sin validación propia: una imagen
-constante o vacía hace fallar a skimage directamente.
+umbralización no usa `cv2.threshold`.
+
+Reusa `validate_grayscale_image`, así que comparte los dos mensajes de error del
+resto del paquete. **Cambio de contrato**: antes una imagen de tres canales
+**no fallaba** — skimage emitía un `UserWarning` que nadie ve y devolvía un
+resultado sin sentido; una lista anidada salía como `AttributeError` y un dtype
+no numérico como `UFuncTypeError`. Ahora los tres son `ValueError`, y las listas
+anidadas **funcionan**, igual que en las `gray_*` desde `0.2.1`.
+
+**Una imagen constante no falla**: el umbral de Otsu es esa misma constante, así
+que `image > thresh` no deja nada y sale una máscara toda negra, sin warning ni
+error. Está fijado por un test.
 
 Es la puerta de entrada natural al bloque `vpx_*`, porque produce exactamente la
 convención 0/255 que ese bloque espera.

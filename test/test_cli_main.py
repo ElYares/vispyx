@@ -568,3 +568,25 @@ def test_build_kernel_rechaza_una_forma_que_el_parser_no_filtro():
     """``_build_kernel`` es API interna: no puede confiar en el ``choices``."""
     with pytest.raises(ValueError, match="Forma de kernel no reconocida: triangulo"):
         cli._build_kernel(5, "triangulo")
+
+
+def test_run_vpx_hitmiss_rechaza_un_patron_que_el_parser_no_filtro(imagen):
+    """Mismo caso que ``_build_kernel``: API interna, no puede confiar en el
+    ``choices`` de argparse. Es la unica forma de alcanzar esa rama."""
+    with pytest.raises(ValueError, match="Patron no reconocido: espiral"):
+        cli.run_vpx_hitmiss(imagen, "espiral")
+
+
+def test_un_metodo_en_la_lista_sin_rama_de_despacho_falla(imagen, monkeypatch):
+    """La red que `HU-003` estuvo a punto de borrar por "codigo muerto".
+
+    La rama ``else`` de ``main()`` es inalcanzable desde ``argparse``, pero no
+    es muerta: protege contra agregar un metodo a ``METHODS`` y olvidar su rama
+    de despacho. Sin ella ese olvido seria un ``NameError`` sobre ``result``,
+    que no dice nada. Se alcanza inyectando el metodo en la lista, que es
+    exactamente el escenario del que protege.
+    """
+    monkeypatch.setattr(cli, "METHODS", cli.METHODS + ["vpx_inventado"])
+
+    with pytest.raises(ValueError, match="Método no reconocido: vpx_inventado"):
+        _correr(monkeypatch, ["vpx_inventado", imagen])
