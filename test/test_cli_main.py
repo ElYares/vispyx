@@ -13,6 +13,7 @@ import pytest
 
 from vispyx import cli
 from vispyx import vpx_blackhat, vpx_boundary, vpx_tophat
+from vispyx.cli import METHODS, PATTERN_NAMES
 from vispyx.kernels import kernel_cross, kernel_diamond, kernel_disk, kernel_square
 
 METODOS = [
@@ -26,6 +27,7 @@ METODOS = [
     "vpx_tophat",
     "vpx_blackhat",
     "vpx_boundary",
+    "vpx_hitmiss",
     "vpx_reconstruct",
     "vpx_skeletonize",
     "vpx_thin",
@@ -70,12 +72,14 @@ def _argumentos(metodo, imagen, mascara, salida):
     if metodo == "vpx_reconstruct":
         # el posicional es el marker: un pixel dentro de la mascara
         return [metodo, imagen, "--mask", mascara, "-o", salida]
+    if metodo == "vpx_hitmiss":
+        return [metodo, imagen, "--pattern", "corner", "-o", salida]
     return [metodo, imagen, "-o", salida]
 
 
 @pytest.mark.parametrize("metodo", METODOS)
 def test_cada_metodo_corre_y_guarda(metodo, imagen, mascara, tmp_path, monkeypatch, capsys):
-    """Los 20 metodos del parser tienen que estar realmente conectados."""
+    """Los 21 metodos del parser tienen que estar realmente conectados."""
     salida = str(tmp_path / f"{metodo}.pgm")
 
     if metodo == "vpx_reconstruct":
@@ -117,6 +121,133 @@ def test_las_binarias_nuevas_despachan_a_su_operacion(
 
     np.testing.assert_array_equal(
         cv2.imread(str(salida), cv2.IMREAD_GRAYSCALE), esperado
+    )
+
+
+def test_la_lista_de_metodos_del_cli_esta_toda_cubierta():
+    """Sin esto, agregar un metodo al CLI lo deja sin cobertura en silencio.
+
+    ``METODOS`` es una lista escrita a mano y ``cli.METHODS`` es la real. Nada
+    las comparaba: al agregar ``vpx_hitmiss`` la suite siguio verde con el
+    metodo nuevo sin un solo test. La parametrizacion es tan buena como esta
+    lista.
+    """
+    assert sorted(METODOS) == sorted(METHODS)
+
+
+PATRONES_ESPERADOS = {
+    "corner": [(3, 3), (3, 7), (7, 3), (7, 7)],
+    "corner-nw": [(3, 3)],
+    "corner-ne": [(3, 7)],
+    "corner-se": [(7, 7)],
+    "corner-sw": [(7, 3)],
+    "isolated": [(10, 10)],
+}
+
+
+@pytest.fixture
+def imagen_con_esquinas(tmp_path):
+    """Bloque solido, un pixel suelto de verdad, y un par que se toca en diagonal.
+
+    **El par diagonal no es decorado.** Sin el, recortar el `miss` de `isolated`
+    de los 8 vecinos a los 4 ortogonales **pasa la suite**: un pixel sin ningun
+    vecino se detecta igual con las dos versiones. Con el par en (11,1) y (12,2)
+    la mutacion los reporta como aislados, y ahi falla.
+
+    Medido: el par no agrega detecciones a ninguno de los patrones de esquina.
+    """
+    datos = np.zeros((14, 14), dtype=np.uint8)
+    datos[3:8, 3:8] = 255
+    datos[10, 10] = 255
+    datos[11, 1] = 255
+    datos[12, 2] = 255
+    ruta = tmp_path / "esquinas.pgm"
+    cv2.imwrite(str(ruta), datos)
+    return str(ruta)
+
+
+@pytest.mark.parametrize("patron", sorted(PATRONES_ESPERADOS))
+def test_cada_patron_detecta_exactamente_lo_suyo(
+    patron, imagen_con_esquinas, tmp_path, monkeypatch
+):
+    """Coordenadas exactas, no conteos.
+
+    Un test que solo contara pixeles activos dejaria pasar `corner-ne` y
+    `corner-sw` intercambiados: los dos detectan un pixel. Y intercambiar el
+    `hit` con el `miss` de un patron tampoco da una imagen vacia — solo la
+    posicion los separa.
+    """
+    salida = tmp_path / f"{patron}.pgm"
+
+    _correr(monkeypatch, ["vpx_hitmiss", imagen_con_esquinas, "--pattern", patron, "-o", str(salida)])
+
+    resultado = cv2.imread(str(salida), cv2.IMREAD_GRAYSCALE)
+    ys, xs = np.nonzero(resultado)
+    assert sorted(zip(ys.tolist(), xs.tolist())) == PATRONES_ESPERADOS[patron]
+    assert resultado.dtype == np.uint8
+    assert set(np.unique(resultado).tolist()) <= {0, 255}
+
+
+def test_corner_es_la_union_de_las_cuatro_orientaciones(
+    imagen_con_esquinas, tmp_path, monkeypatch
+):
+    """`corner` no es un par hit/miss: compone las cuatro. Si devolviera una
+    sola orientacion seguiria dando una imagen valida, con un pixel."""
+    salidas = {}
+    for patron in ("corner", "corner-nw", "corner-ne", "corner-se", "corner-sw"):
+        ruta = tmp_path / f"u-{patron}.pgm"
+        _correr(monkeypatch, ["vpx_hitmiss", imagen_con_esquinas, "--pattern", patron, "-o", str(ruta)])
+        salidas[patron] = cv2.imread(str(ruta), cv2.IMREAD_GRAYSCALE)
+
+    union = np.zeros_like(salidas["corner"])
+    for patron in ("corner-nw", "corner-ne", "corner-se", "corner-sw"):
+        union = np.maximum(union, salidas[patron])
+
+    np.testing.assert_array_equal(salidas["corner"], union)
+
+
+def test_hitmiss_sin_pattern_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_hitmiss", imagen])
+
+    assert fallo.value.code == 2
+    assert "--pattern es obligatorio para vpx_hitmiss" in capsys.readouterr().err
+
+
+def test_pattern_desconocido_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_hitmiss", imagen, "--pattern", "triangulo"])
+
+    assert fallo.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_el_catalogo_de_patrones_es_valido_entero():
+    """Un par mal escrito tiene que fallar al agregarlo, no al usarlo.
+
+    Las tres reglas de ``validate_hitmiss_kernels``: misma forma, sin
+    solapamiento, y cada uno con al menos un elemento activo.
+    """
+    from vispyx.cli import PATTERNS
+
+    assert sorted(PATTERN_NAMES) == sorted(["corner"] + list(PATTERNS))
+    for nombre, (hit, miss) in PATTERNS.items():
+        assert hit.shape == miss.shape, nombre
+        assert not np.any((hit > 0) & (miss > 0)), nombre
+        assert hit.any() and miss.any(), nombre
+
+
+def test_hitmiss_ignora_las_flags_de_kernel(imagen_con_esquinas, tmp_path, monkeypatch):
+    """`vpx_hitmiss` no toma kernel ni iterations, igual que `vpx_skeletonize`
+    ya ignora `--kernel-size`. Pasarlas no debe fallar ni cambiar el resultado."""
+    con, sin = tmp_path / "con.pgm", tmp_path / "sin.pgm"
+
+    _correr(monkeypatch, ["vpx_hitmiss", imagen_con_esquinas, "--pattern", "isolated", "-o", str(sin)])
+    _correr(monkeypatch, ["vpx_hitmiss", imagen_con_esquinas, "--pattern", "isolated",
+                          "--kernel-size", "7", "--kernel-shape", "disk", "--iterations", "3", "-o", str(con)])
+
+    np.testing.assert_array_equal(
+        cv2.imread(str(sin), cv2.IMREAD_GRAYSCALE), cv2.imread(str(con), cv2.IMREAD_GRAYSCALE)
     )
 
 

@@ -2,6 +2,17 @@
 
 ## No publicado
 
+- `vpx_hitmiss` en el CLI por `--pattern`, con patrones de nombre en vez de dos
+  kernels sueltos: `corner` (las cuatro esquinas), `corner-nw`, `corner-ne`,
+  `corner-se`, `corner-sw` e `isolated`. El CLI pasa de 20 a 21 metodos y
+  **cierra la ultima deuda accionable de `docs/architecture.md`**
+- `--pattern` es obligatoria para `vpx_hitmiss`: omitirla sale con codigo 2,
+  igual que `--mask` para `vpx_reconstruct`
+- `cli.py` expone `METHODS`, `PATTERNS` y `PATTERN_NAMES` como constantes de
+  modulo. `METHODS` estaba dentro de `main()` y no se podia comprobar desde los
+  tests: la lista `METODOS` de `test_cli_main.py` es a mano, y agregar un metodo
+  al CLI lo dejaba **sin cobertura en silencio**. Ahora un test compara las dos
+- cobertura de 364 a 377 tests
 - **cambio de contrato**: `apply_clahe` valida su entrada. Antes una imagen
   `float64`, una de tres canales o una lista anidada salian como `cv2.error`
   desde `clahe.cpp`; ahora salen como `ValueError`, igual que toda validacion
