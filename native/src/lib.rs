@@ -24,6 +24,18 @@ enum Op {
     Dilate,
 }
 
+/// El nombre lo elige el despacho de Python, asi que un valor desconocido es un
+/// bug interno y no una entrada del usuario.
+fn parse_op(op: &str) -> PyResult<Op> {
+    match op {
+        "erode" => Ok(Op::Erode),
+        "dilate" => Ok(Op::Dilate),
+        other => Err(PyValueError::new_err(format!(
+            "unknown native operation: {other}"
+        ))),
+    }
+}
+
 /// Map a possibly out-of-range index onto `np.pad(mode="reflect")`.
 ///
 /// `rem_euclid` first, so the fold below works for pad widths larger than the
@@ -39,6 +51,27 @@ fn reflect(index: isize, len: isize) -> usize {
         folded = period - folded;
     }
     folded as usize
+}
+
+/// Active kernel cells as `(dy, dx)` offsets from the center, plus that center.
+///
+/// Las celdas inactivas desaparecen aqui: el motor de Python las paga en una
+/// mascara booleana por ventana, y en Rust simplemente no estan.
+fn active_offsets(
+    kernel: &numpy::ndarray::ArrayView2<u8>,
+) -> (Vec<(isize, isize)>, (isize, isize)) {
+    let (height, width) = kernel.dim();
+    let radius = ((height / 2) as isize, (width / 2) as isize);
+
+    let mut offsets = Vec::with_capacity(height * width);
+    for y in 0..height {
+        for x in 0..width {
+            if kernel[(y, x)] != 0 {
+                offsets.push((y as isize - radius.0, x as isize - radius.1));
+            }
+        }
+    }
+    (offsets, radius)
 }
 
 /// Run one erosion or dilation pass over `src`, writing into `dst`.
@@ -94,6 +127,69 @@ fn sweep(
     }
 }
 
+/// Grayscale twin of [`sweep`]: `min` or `max` over the active support.
+///
+/// Genérica sobre enteros y no sobre cualquier numero a proposito. `Ord` es un
+/// orden total; los flotantes solo tienen `PartialOrd`, y reproducir la
+/// propagacion de `NaN` de `np.min` bit a bit no vale el riesgo. El lado Python
+/// manda los flotantes a su propio bucle, que sigue siendo la referencia.
+fn sweep_gray<T: Copy + Ord>(
+    src: &[T],
+    height: isize,
+    width: isize,
+    offsets: &[(isize, isize)],
+    radius: (isize, isize),
+    op: Op,
+    dst: &mut [T],
+) {
+    let (pad_y, pad_x) = radius;
+    let stride = width as usize;
+
+    for i in 0..height {
+        let row_inside = i >= pad_y && i < height - pad_y;
+
+        for j in 0..width {
+            let inside = row_inside && j >= pad_x && j < width - pad_x;
+
+            // `validate_kernel` garantiza al menos una celda activa, asi que el
+            // primer offset sirve de acumulador inicial y evita un Option por
+            // pixel.
+            let sample_at = |dy: isize, dx: isize| {
+                if inside {
+                    src[(i + dy) as usize * stride + (j + dx) as usize]
+                } else {
+                    src[reflect(i + dy, height) * stride + reflect(j + dx, width)]
+                }
+            };
+
+            let (first_dy, first_dx) = offsets[0];
+            let mut value = sample_at(first_dy, first_dx);
+
+            for &(dy, dx) in &offsets[1..] {
+                let sample = sample_at(dy, dx);
+                value = match op {
+                    Op::Erode => {
+                        if sample < value {
+                            sample
+                        } else {
+                            value
+                        }
+                    }
+                    Op::Dilate => {
+                        if sample > value {
+                            sample
+                        } else {
+                            value
+                        }
+                    }
+                };
+            }
+
+            dst[i as usize * stride + j as usize] = value;
+        }
+    }
+}
+
 /// Apply `iterations` binary erosions or dilations.
 ///
 /// `image` and `kernel` are expected to hold only zeros and ones; the caller
@@ -107,31 +203,13 @@ fn binary_op<'py>(
     iterations: usize,
     op: &str,
 ) -> PyResult<Bound<'py, PyArray2<u8>>> {
-    let op = match op {
-        "erode" => Op::Erode,
-        "dilate" => Op::Dilate,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "unknown native operation: {other}"
-            )))
-        }
-    };
+    let op = parse_op(op)?;
 
     let image = image.as_array();
     let kernel = kernel.as_array();
 
     let (height, width) = image.dim();
-    let (kernel_height, kernel_width) = kernel.dim();
-    let radius = ((kernel_height / 2) as isize, (kernel_width / 2) as isize);
-
-    let mut offsets = Vec::with_capacity(kernel_height * kernel_width);
-    for ky in 0..kernel_height {
-        for kx in 0..kernel_width {
-            if kernel[(ky, kx)] != 0 {
-                offsets.push((ky as isize - radius.0, kx as isize - radius.1));
-            }
-        }
-    }
+    let (offsets, radius) = active_offsets(&kernel);
 
     // `.iter()` walks in logical row-major order whatever the memory layout is,
     // so a sliced or transposed view lands here correctly.
@@ -156,16 +234,96 @@ fn binary_op<'py>(
     Ok(result.into_pyarray(py))
 }
 
-/// Operations this build can handle. The Python side falls back for the rest.
+/// Cuerpo de `grayscale_op` una vez resuelto el dtype.
+fn run_grayscale<'py, T>(
+    py: Python<'py>,
+    image: PyReadonlyArray2<'py, T>,
+    kernel: PyReadonlyArray2<'py, u8>,
+    iterations: usize,
+    op: Op,
+) -> PyResult<Bound<'py, PyAny>>
+where
+    T: numpy::Element + Copy + Ord,
+{
+    let image = image.as_array();
+    let kernel = kernel.as_array();
+
+    let (height, width) = image.dim();
+    let (offsets, radius) = active_offsets(&kernel);
+
+    let mut current: Vec<T> = image.iter().copied().collect();
+    let mut next = current.clone();
+
+    for _ in 0..iterations {
+        sweep_gray(
+            &current,
+            height as isize,
+            width as isize,
+            &offsets,
+            radius,
+            op,
+            &mut next,
+        );
+        std::mem::swap(&mut current, &mut next);
+    }
+
+    let result = numpy::ndarray::Array2::from_shape_vec((height, width), current)
+        .map_err(|err| PyValueError::new_err(err.to_string()))?;
+    Ok(result.into_pyarray(py).into_any())
+}
+
+/// Apply `iterations` grayscale erosions (min) or dilations (max).
+///
+/// Despacha por dtype y devuelve el mismo tipo que recibio. Solo enteros: los
+/// flotantes se quedan en el bucle de Python, ver [`sweep_gray`].
+#[pyfunction]
+#[pyo3(signature = (image, kernel, iterations, op))]
+fn grayscale_op<'py>(
+    py: Python<'py>,
+    image: &Bound<'py, PyAny>,
+    kernel: PyReadonlyArray2<'py, u8>,
+    iterations: usize,
+    op: &str,
+) -> PyResult<Bound<'py, PyAny>> {
+    let op = parse_op(op)?;
+
+    macro_rules! dispatch {
+        ($($dtype:ty),+ $(,)?) => {
+            $(
+                if let Ok(typed) = image.extract::<PyReadonlyArray2<$dtype>>() {
+                    return run_grayscale::<$dtype>(py, typed, kernel, iterations, op);
+                }
+            )+
+        };
+    }
+
+    dispatch!(u8, i8, u16, i16, u32, i32, u64, i64);
+
+    Err(PyValueError::new_err(
+        "unsupported dtype for the native grayscale engine",
+    ))
+}
+
+/// Binary operations this build can handle. The Python side falls back for the rest.
 #[pyfunction]
 fn supported_ops() -> Vec<&'static str> {
     vec!["erode", "dilate"]
+}
+
+/// Grayscale operations, and the dtypes the native engine accepts.
+#[pyfunction]
+fn supported_grayscale_dtypes() -> Vec<&'static str> {
+    vec![
+        "uint8", "int8", "uint16", "int16", "uint32", "int32", "uint64", "int64",
+    ]
 }
 
 #[pymodule]
 fn vispyx_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     module.add_function(wrap_pyfunction!(binary_op, module)?)?;
+    module.add_function(wrap_pyfunction!(grayscale_op, module)?)?;
     module.add_function(wrap_pyfunction!(supported_ops, module)?)?;
+    module.add_function(wrap_pyfunction!(supported_grayscale_dtypes, module)?)?;
     Ok(())
 }

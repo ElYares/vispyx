@@ -12,6 +12,7 @@ def gray_erode(image, kernel=None, iterations=1):
         kernel,
         iterations,
         reducer=lambda region: np.min(region),
+        native_op="erode",
     )
 
 
@@ -22,6 +23,7 @@ def gray_dilate(image, kernel=None, iterations=1):
         kernel,
         iterations,
         reducer=lambda region: np.max(region),
+        native_op="dilate",
     )
 
 
