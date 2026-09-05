@@ -23,6 +23,13 @@ pytest.importorskip(
 
 from vispyx import _backend
 from vispyx import (
+    gray_blackhat,
+    gray_close,
+    gray_dilate,
+    gray_erode,
+    gray_gradient,
+    gray_open,
+    gray_tophat,
     kernel_cross,
     kernel_diamond,
     kernel_disk,
@@ -78,6 +85,29 @@ KERNEL_IDS = (
 
 ELEMENTWISE_OPERATIONS = (vpx_erode, vpx_dilate)
 COMPOSED_OPERATIONS = (vpx_open, vpx_close, vpx_gradient, vpx_tophat, vpx_boundary)
+
+GRAYSCALE_OPERATIONS = (
+    gray_erode,
+    gray_dilate,
+    gray_open,
+    gray_close,
+    gray_gradient,
+    gray_tophat,
+    gray_blackhat,
+)
+
+# Los ocho que el motor nativo despacha. `int64` importa mas de lo que parece:
+# es el dtype por defecto de `np.array([[1, 2]])` en Linux.
+NATIVE_DTYPES = (
+    np.uint8,
+    np.int8,
+    np.uint16,
+    np.int16,
+    np.uint32,
+    np.int32,
+    np.uint64,
+    np.int64,
+)
 
 
 def both_backends(operation, *args, **kwargs):
@@ -215,3 +245,99 @@ def test_unknown_backend_mode_is_rejected():
     with pytest.raises(ValueError, match="VISPYX_BACKEND must be one of"):
         with _backend.override("cuda"):
             pass
+
+
+# --- motor grayscale ---
+
+
+def gray_noise(shape, seed, dtype=np.uint8):
+    """Imagen de grises con valores en todo el rango util del dtype."""
+    rng = np.random.default_rng(seed)
+    tope = min(200, int(np.iinfo(dtype).max))
+    return rng.integers(0, tope + 1, shape).astype(dtype)
+
+
+@pytest.mark.parametrize("operation", GRAYSCALE_OPERATIONS, ids=lambda op: op.__name__)
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+@pytest.mark.parametrize("iterations", (1, 2))
+def test_grayscale_operations_match(operation, kernel, iterations):
+    image = gray_noise((13, 11), seed=101)
+    assert_identical(*both_backends(operation, image, kernel, iterations))
+
+
+@pytest.mark.parametrize("dtype", NATIVE_DTYPES, ids=lambda d: np.dtype(d).name)
+def test_every_native_dtype_matches_and_is_preserved(dtype):
+    """El nativo despacha por dtype y tiene que devolver el mismo que recibio."""
+    image = gray_noise((9, 9), seed=103, dtype=dtype)
+    # Kernel con hueco: `kernel_cross(7)` es simetrico y no discrimina el borde.
+    kernel = np.array([[1, 0, 0]], dtype=np.uint8)
+    for operation in (gray_erode, gray_dilate, gray_open, gray_gradient):
+        expected, actual = both_backends(operation, image, kernel, 1)
+        assert_identical(expected, actual)
+        assert actual.dtype == np.dtype(dtype)
+
+
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+@pytest.mark.parametrize("column", (0, 1, -2, -1))
+def test_grayscale_border_columns_match(kernel, column):
+    """El borde es donde el padding manda, también en grises."""
+    image = np.zeros((11, 11), dtype=np.uint8)
+    image[:, column] = 200
+    image[4, :] = 120
+    assert_identical(*both_backends(gray_erode, image, kernel, 1))
+    assert_identical(*both_backends(gray_dilate, image, kernel, 1))
+
+
+@pytest.mark.parametrize(
+    "shape", ((1, 1), (1, 9), (9, 1), (2, 2)), ids=("1x1", "1x9", "9x1", "2x2")
+)
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+def test_grayscale_kernels_larger_than_the_image_match(shape, kernel):
+    """Parametrizado sobre KERNELS y no sobre un diamante suelto.
+
+    Con `kernel_diamond(7)` solo, este test sobrevivia a la mutacion de padding:
+    un soporte simetrico que contiene el centro no distingue el reflejo de la
+    repeticion de borde. Los kernels con hueco de la lista si.
+    """
+    image = gray_noise(shape, seed=107)
+    assert_identical(*both_backends(gray_erode, image, kernel, 1))
+    assert_identical(*both_backends(gray_dilate, image, kernel, 1))
+
+
+@pytest.mark.parametrize("dtype", (np.float32, np.float64), ids=("float32", "float64"))
+def test_floats_never_reach_the_native_engine(dtype, monkeypatch):
+    """Los flotantes se quedan en Python a proposito.
+
+    ``Ord`` en Rust es un orden total y los flotantes no lo tienen; reproducir la
+    propagacion de ``NaN`` de ``np.min`` bit a bit no vale el riesgo. Se verifica
+    rompiendo el nativo: si el float lo tocara, esto explotaria.
+    """
+    image = (np.random.default_rng(109).random((7, 7)) * 100).astype(dtype)
+
+    with _backend.override("rust"):
+        backend = _backend.native()
+
+        def explota(*args, **kwargs):
+            raise AssertionError("un float llego al motor nativo")
+
+        monkeypatch.setattr(backend, "grayscale_op", explota)
+        resultado = gray_erode(image, kernel_square(3))
+
+    assert resultado.dtype == np.dtype(dtype)
+
+
+def test_nan_survives_the_python_fallback():
+    """El corolario de lo anterior: `np.min` propaga NaN, y eso se conserva."""
+    image = np.full((5, 5), 1.0, dtype=np.float32)
+    image[2, 2] = np.nan
+
+    with _backend.override("rust"):
+        resultado = gray_erode(image, kernel_square(3))
+
+    assert np.isnan(resultado[2, 2])
+
+
+def test_the_native_engine_declares_its_dtypes():
+    with _backend.override("rust"):
+        declarados = _backend.native().supported_grayscale_dtypes()
+    assert set(declarados) == {np.dtype(d).name for d in NATIVE_DTYPES}
