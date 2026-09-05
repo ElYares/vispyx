@@ -9,7 +9,11 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **425 tests, 425 pasan, ~4.0 s** (Python 3.13.13, numpy
+Estado verificado: **438 tests, 438 pasan, ~4.0 s** sin el backend nativo, y
+**669 tests, ~2.9 s** con él instalado (los 131 de paridad se suman, y el resto
+de la suite corre más rápido). La suite pasa entera en los dos modos:
+`VISPYX_BACKEND=python pytest -q` y `VISPYX_BACKEND=rust pytest -q`; ver
+[native_backend.md](./native_backend.md). (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -27,7 +31,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | Archivo | Tests | Qué fija |
 |---|---|---|
 | `test_invariants.py` | 193 | las leyes de la morfología como propiedad general |
-| `test_cli_main.py` | 71 | el parser: flags, patrones, guardado y códigos de salida |
+| `test_cli_main.py` | 84 | el parser: flags, patrones, guardado y códigos de salida, incluidas `--backend`, `--time` y `--compare` |
 | `test_edge_cases.py` | 35 | entradas degeneradas y los caminos que nadie recorría |
 | `test_segmentation.py` | 8 | `segment_otsu`: el umbral, el puente y su validación |
 | `test_morphology.py` | 47 | el núcleo algorítmico, binario y grayscale |
@@ -37,6 +41,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | las tres `run_*` que no encajan en el molde, con I/O real |
 | `test_preprocessing.py` | 15 | qué hace `apply_clahe`, sus parámetros y su validación |
+| `test_backend_parity.py` | 231 | paridad exacta entre el motor de Python y el backend en Rust; se salta si el nativo no está instalado |
 
 ## Qué se verifica de verdad
 

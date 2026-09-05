@@ -1,5 +1,71 @@
 # Changelog
 
+## No publicado
+
+**Spike: backend opcional en Rust para erosion y dilatacion binaria.**
+
+`vpx_erode` y `vpx_dilate` pueden ejecutarse en Rust, con resultados identicos
+bit a bit a los del bucle de Python. Las ocho operaciones compuestas
+(`open`, `close`, `gradient`, `tophat`, `blackhat`, `boundary`, `hitmiss`,
+`reconstruct`) heredan la aceleracion sin cambios, porque ya estaban escritas
+como composicion explicita de esas dos. Medido: **376x en `vpx_erode` 3x3 sobre
+256x256**, 478x en `vpx_open` con dos iteraciones.
+
+Ningun simbolo publico nuevo, ninguna firma cambiada, ningun mensaje de error
+distinto. Sin el nativo instalado, el paquete se comporta exactamente igual que
+antes.
+
+- nuevo `vispyx/_backend.py`: modulo hoja, sin dependencias del paquete, que
+  resuelve el motor una sola vez al importar. `VISPYX_BACKEND` acepta `auto`
+  (default), `python` y `rust`; cualquier otro valor lanza `ValueError`
+- `apply_binary_operation` toma un parametro nuevo `native_op`. Cuando el
+  backend nativo esta activo y la operacion lo declara, delega el recorrido.
+  La rama va **despues** de las tres validaciones: el nativo nunca ve una
+  entrada sin normalizar y nunca lanza los mensajes de error, que siguen siendo
+  contrato publico de Python
+- nueva distribucion `vispyx-native` en `native/` (PyO3 + maturin), separada a
+  proposito: `pip install vispyx` no debe necesitar un compilador. Declarada
+  como extra `vispyx[fast]`, pendiente de publicar en PyPI
+- nuevo `test/test_backend_parity.py`, 231 tests, mas 13 en `test_cli_main.py`
+  para las flags nuevas. Corre la misma entrada por los
+  dos backends y exige igualdad exacta de valores y dtype. A diferencia de
+  `test_reference_scipy.py`, que rodea cada imagen con un marco de fondo para
+  evitar el borde, este lo toca a proposito: foreground pegado al margen, un
+  pixel en la esquina, kernels mas grandes que la imagen, ejes de longitud 1 y
+  vistas no contiguas. Se salta solo si el nativo no esta instalado, e incluye
+  un test que verifica que el backend bajo prueba **es** el nativo
+- la suite completa pasa en los dos modos: 669 tests con nativo, 438 sin el
+- **la paridad esta verificada por mutacion**. Cambiando a proposito el reflejo
+  por repeticion de borde en el Rust, ninguno de los 438 tests preexistentes
+  falla: un kernel solido no distingue las dos cosas, porque en la columna 0 el
+  reflejo muestrea `{img[1], img[0], img[1]}` y la repeticion
+  `{img[0], img[0], img[1]}`, que como conjunto son iguales. Solo discrimina un
+  soporte que excluya el centro y sea asimetrico, y por eso la lista de kernels
+  incluye `[[1,0,1]]`, `[[1,0,0]]`, `[[1],[0],[0]]` y un 3x3 con solo la esquina
+  activa. Con esos, la misma mutacion cae en 69 tests en vez de 15
+- **el CLI aprende a hablar del backend**, que antes no tenia forma de saberse
+  desde la linea de comandos:
+  - `vispyx --version` imprime `vispyx 0.4.0 (backend: rust, vispyx-native
+    0.1.0)`. Es lo unico que responde "que motor tengo" sin correr una operacion
+  - `--backend {auto,python,rust}` elige el motor para esa invocacion, con
+    prioridad sobre `VISPYX_BACKEND`. Pedir `rust` sin el paquete instalado
+    **falla con salida 2** en vez de caer a Python en silencio: recibir un motor
+    distinto del pedido invalida cualquier medicion
+  - `--time` reporta cuanto tardo la operacion y con que motor
+  - `--compare` corre los dos, mide, y verifica que el resultado coincida.
+    Sirve mas que cronometrar dos invocaciones desde la shell porque deja el
+    arranque del interprete fuera de la medicion: es cerca de un segundo, y en
+    imagenes chicas tapa por completo la diferencia. Si los dos motores
+    divergen sale con codigo 1, porque eso es un bug del paquete y no un error
+    de uso
+- la cadena de despacho de `main()` sale a `_dispatch()`. Era la unica forma de
+  cronometrarla y de correrla dos veces sobre backends distintos
+- la resolucion del backend pasa a ser perezosa. Hacerla al importar convertia
+  un `VISPYX_BACKEND` mal escrito en un fallo de `import vispyx`
+- nuevo `docs/native_backend.md`; `native/bench.py` reproduce las mediciones
+- **fuera de alcance por ahora**: las 7 `gray_*`, `vpx_skeletonize` y `vpx_thin`
+  siguen 100% en Python
+
 ## 0.4.0
 
 **El CLI queda completo y el paquete deja de filtrar excepciones ajenas.**

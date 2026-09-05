@@ -23,6 +23,24 @@ importan el módulo. La única forma soportada de invocar el CLI es el comando
 vispyx <method> <image_path> [opciones]
 ```
 
+Esa es la forma canónica, no una restricción: **las flags van en cualquier
+posición**. Las cuatro líneas siguientes son equivalentes.
+
+```bash
+vispyx vpx_erode mask.pgm --backend rust --show
+vispyx --backend rust vpx_erode mask.pgm --show
+vispyx --backend rust --show vpx_erode mask.pgm
+vispyx --show vpx_erode --backend rust mask.pgm
+```
+
+Lo único fijo es el **orden relativo de los dos posicionales**: el método antes
+de la imagen. Invertirlos falla con salida `2`, porque `choices` no reconoce la
+ruta como método:
+
+```text
+vispyx: error: argument method: invalid choice: 'mask.pgm'
+```
+
 El CLI **no usa subparsers**. Es un único `ArgumentParser` plano donde el
 "subcomando" es el primer argumento posicional `method`, restringido por
 `choices`. Consecuencias prácticas:
@@ -75,6 +93,10 @@ la API de Python pero no están expuestos en el CLI**.
 | `--kernel-shape` | `kernel_shape` | `str` | `square` | todos los `vpx_*`/`gray_*` con kernel |
 | `--iterations` | `iterations` | `int` | `1` | `vpx_erode/dilate/open/close/gradient`, `vpx_thin`, todos los `gray_*` |
 | `--max-iterations` | `max_iterations` | `int` | `None` | `vpx_reconstruct`, `vpx_skeletonize` |
+| `--backend` | `backend` | `str` | `None` | todos (ver abajo) |
+| `--time` | `time` | flag | `False` | todos |
+| `--compare` | `compare` | flag | `False` | todos |
+| `--version` | — | acción | — | ninguno: imprime y sale con `0` |
 
 `--kernel` y `--kernel-size` comparten `dest`. El default efectivo es `3`
 porque `--kernel-size` se registra primero; pasar `--kernel N` sobrescribe
@@ -113,6 +135,95 @@ coinciden entre sí:
 
 Si estás comparando formas y no ves diferencia, sube el tamaño antes de suponer
 que la flag no funciona.
+
+## Backend: `--backend`, `--time`, `--compare`
+
+La morfología binaria puede correr en el motor de Python o en el backend
+opcional en Rust, `vispyx-native`. El resultado es idéntico bit a bit; lo único
+que cambia es el tiempo. Ver [native_backend.md](./native_backend.md).
+
+### Saber qué motor tenés
+
+```bash
+$ vispyx --version
+vispyx 0.4.0 (backend: rust, vispyx-native 0.1.0)
+```
+
+Sin el paquete opcional instalado dice `(backend: python)`. Es la única forma de
+verlo sin correr una operación.
+
+### `--backend {auto,python,rust}`
+
+Elige el motor para esa invocación. Tres niveles, gana el más específico:
+
+| Nivel | Ejemplo | Alcance |
+|---|---|---|
+| Flag | `vispyx --backend rust ...` | esa invocación |
+| Variable de entorno | `VISPYX_BACKEND=rust vispyx ...` | esa shell |
+| Default | nada | `auto`: nativo si está instalado, Python si no |
+
+```bash
+# la variable dice python, la flag manda
+$ VISPYX_BACKEND=python vispyx --backend rust vpx_erode mask.pgm --time -o out.pgm
+tiempo (rust): 0.0185s
+```
+
+El motor que `--time` reporta es el que **corrió**, no el que se pidió, así que
+sirve para confirmar la precedencia.
+
+```bash
+vispyx vpx_open mask.pgm --backend python -o outputs/lento.pgm
+vispyx vpx_open mask.pgm --backend rust   -o outputs/rapido.pgm
+```
+
+`--backend rust` sin el paquete instalado **no cae a Python en silencio**: falla
+con salida `2`. Es a propósito — pedir un motor y recibir otro invalida
+cualquier medición.
+
+### `--time`
+
+Imprime cuánto tardó la operación:
+
+```bash
+$ vispyx vpx_erode mask.pgm --backend rust --time -o outputs/e.pgm
+tiempo (rust): 0.0253s
+nota: el tiempo incluye la lectura de la imagen desde disco
+```
+
+El nombre entre paréntesis es el motor que realmente corrió, así que sirve
+también como confirmación. La lectura del archivo entra en la medición: las
+`run_*` abren la imagen por su cuenta.
+
+### `--compare`
+
+Corre la operación con los dos motores, mide cada uno y verifica que el
+resultado coincida:
+
+```bash
+$ vispyx vpx_open mask.pgm --kernel-size 7 --kernel-shape disk --compare -o outputs/open.pgm
+backend         tiempo    relativo
+python        11.9268s        1.0x
+rust           0.0491s      242.7x
+resultados identicos: si
+nota: el tiempo incluye la lectura de la imagen desde disco
+Imagen guardada en: outputs/open.pgm
+```
+
+Guarda el resultado del backend nativo, que por construcción es el mismo que el
+de Python. Vale sobre cronometrar dos invocaciones desde la shell por dos
+razones: el arranque del intérprete queda fuera de la medición —es cerca de un
+segundo, y en imágenes chicas tapa por completo la diferencia— y las dos
+corridas ven exactamente la misma entrada.
+
+No combina con `--backend`: pedir los dos motores y uno solo a la vez es
+contradictorio, y sale con `2`.
+
+**Qué esperar por método.** Solo `vpx_erode` y `vpx_dilate` tienen ruta nativa,
+más las ocho que se apoyan en ellas por composición (`open`, `close`,
+`gradient`, `tophat`, `blackhat`, `boundary`, `hitmiss`, `reconstruct`). Sobre
+`clahe`, `otsu`, las siete `gray_*`, `vpx_skeletonize` y `vpx_thin`, `--compare`
+funciona pero va a reportar ~`1.0x`: son los mismos bucles de Python las dos
+veces. En `vpx_skeletonize` además paga el doble del peor caso del paquete.
 
 ## Qué hace cada método
 
@@ -225,6 +336,14 @@ Tkinter, `--show` falla.
 - método inválido, falta de argumentos, tipo incorrecto (`--clip abc`)
 - `vpx_reconstruct` sin `--mask`:
   `vispyx: error: --mask es obligatorio para vpx_reconstruct`
+- `--backend rust` o `--compare` sin `vispyx-native` instalado
+- `--compare` junto con `--backend`
+
+**Salida 1, mensaje limpio (un solo caso)**
+
+- `los dos backends divergieron`, tras la tabla de `--compare`. No es un error
+  de uso sino un bug del paquete, y por eso sale con código distinto de cero:
+  para que un script lo note
 
 **Salida 1, traceback crudo (excepciones no capturadas)**
 
@@ -241,7 +360,9 @@ Tkinter, `--show` falla.
 | `cv2.error` | OpenCV, p. ej. `--grid 0` en CLAHE |
 
 Resumen: solo los errores de parseo salen amigables. Todo error de dominio sale
-como traceback.
+como traceback. Un `VISPYX_BACKEND` con un valor que no existe entra en esa
+segunda categoría (`ValueError: VISPYX_BACKEND must be one of: auto, python,
+rust`); la flag `--backend` sí lo ataja con `choices`, con salida `2`.
 
 ## Ejemplos
 
@@ -284,6 +405,12 @@ vispyx vpx_open mascara.pgm --kernel-size 5 --kernel-shape disk -o outputs/disk.
 
 # para separar diamante de disco hace falta 7: en 5 son el mismo kernel
 vispyx gray_tophat imagen.pgm --kernel-size 7 --kernel-shape diamond -o outputs/diamond.pgm
+
+# elegir el motor, y medirlo
+vispyx vpx_open mask.pgm --backend rust --time -o outputs/open.pgm
+
+# comparar los dos motores en una sola corrida
+vispyx vpx_open mask.pgm --kernel-size 7 --compare -o outputs/open.pgm
 ```
 
 ## Pipeline típico en una línea de comandos
