@@ -2,6 +2,55 @@
 
 ## No publicado
 
+### Motor grayscale
+
+**El motor grayscale tambien corre en Rust: 17 de 19 operaciones aceleradas.**
+
+`gray_erode` y `gray_dilate` se suman al backend nativo, y las cinco compuestas
+--`gray_open`, `gray_close`, `gray_gradient`, `gray_tophat`, `gray_blackhat`--
+heredan la aceleracion sin una linea nueva, igual que paso con las binarias.
+Con cuatro funciones nativas en total quedan cubiertas 17 de las 19 operaciones
+del paquete.
+
+Medido: **242x en gray_erode 3x3 sobre 256x256**, 261x en gray_open, 272x en
+uint16. Resultados identicos bit a bit, y el dtype de entrada se conserva.
+
+- ocho dtypes enteros van al nativo: uint8, int8, uint16, int16, uint32, int32,
+  uint64, int64. `int64` no es exotico: es el dtype por defecto de
+  `np.array([[1, 2]])` en Linux
+- **los flotantes se quedan en Python a proposito.** `Ord` en Rust es un orden
+  total y los flotantes no lo tienen; reproducir bit a bit la propagacion de
+  `NaN` de `np.min` no vale el riesgo en un spike. El despacho mira
+  `dtype.kind` y manda float32/float64 al bucle de siempre, sin avisar: mismo
+  resultado, solo mas lento. Dos tests cubren ese camino, incluido uno que
+  rompe el nativo para probar que un float nunca lo toca
+- **el speedup cae con el tamano del kernel, y no es un defecto del port.** En
+  Python el costo es por pixel --domina el overhead de numpy por ventana-- y en
+  Rust es por celda activa. Medido: un `gray_erode` sobre 128x128 tarda lo mismo
+  con kernel 3x3 (0.0564 s) que con 15x15 (0.0549 s), pese a tener 25 veces mas
+  celdas. Por eso el mismo port da 242x en 3x3 y 8x en 15x15
+- `active_offsets` y `parse_op` salen a funciones compartidas: los dos motores
+  del crate usan la misma geometria y el mismo despacho de operacion
+- la suite pasa de 669 a 901 tests con el nativo instalado; sin el, 433 pasan y
+  6 se saltan
+- **dos tests nuevos sobrevivieron a la mutacion y se reforzaron.** Aplicando
+  clamp en vez de reflejo solo en `sweep_gray`, `kernel_diamond(7)` y
+  `kernel_cross(7)` no lo detectaban: son simetricos y contienen el centro, la
+  misma trampa que ya habia aparecido en el bloque binario. Parametrizados sobre
+  la lista completa de kernels, la mutacion pasa de 58 a 75 fallos
+- `docs/native_backend.md` documenta la receta de mutacion y como simular la
+  ausencia del nativo. Ese segundo detalle tiene su propia trampa: el modulo
+  falso tiene que lanzar `ModuleNotFoundError` y no `ImportError`, porque desde
+  pytest 8.2 `importorskip` solo trata el primero como dependencia ausente
+- `vpx_reconstruct` sale de la lista de pendientes. Medido, su bucle geodesico
+  ya esta dominado por la dilatacion nativa: 0.0766 s contra 28.16 s en Python
+  puro sobre 256x256, un 368x que salio gratis por composicion
+- **fuera de alcance**: `vpx_skeletonize` y `vpx_thin` siguen en Python, y son
+  ahora lo unico pesado que queda. No escalan con los pixeles sino con pixeles
+  por iteraciones: 0.63 s en 128x128, 5.10 s en 256x256, 43.37 s en 512x512
+
+### Motor binario
+
 **Spike: backend opcional en Rust para erosion y dilatacion binaria.**
 
 `vpx_erode` y `vpx_dilate` pueden ejecutarse en Rust, con resultados identicos

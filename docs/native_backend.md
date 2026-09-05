@@ -1,7 +1,7 @@
 # Backend nativo en Rust
 
-Estado: **spike**. Cubre `vpx_erode` y `vpx_dilate`; el resto del paquete no
-cambió. Distribución aparte, opcional, en `native/`.
+Estado: **spike**. Cubre los dos motores de ventana deslizante, binario y
+grayscale. Distribución aparte, opcional, en `native/`.
 
 ## Qué problema resuelve
 
@@ -12,14 +12,30 @@ vale más que la velocidad, y esa decisión no se toca. Pero el costo crece con 
 ```text
 caso                    tamaño     python       rust   speedup
 --------------------------------------------------------------
-vpx_erode  3x3  x1     64x64      0.0185s    0.0003s       61x
-vpx_erode  3x3  x1    128x128     0.0723s    0.0002s      301x
-vpx_erode  3x3  x1    256x256     0.2936s    0.0008s      376x
-vpx_erode  5x5  x1    256x256     0.2943s    0.0007s      409x
-vpx_open   3x3  x2    256x256     1.1710s    0.0024s      478x
+vpx_erode   3x3  x1   256x256     0.3821s    0.0008s      469x
+vpx_open    3x3  x2   256x256     1.2005s    0.0023s      516x
+gray_erode  3x3  x1   256x256     0.2008s    0.0008s      242x
+gray_erode  7x7  x1   256x256     0.2025s    0.0051s       40x
+gray_erode 15x15 x1   256x256     0.2266s    0.0295s        8x
+gray_open   3x3  x1   256x256     0.4465s    0.0017s      261x
 ```
 
 Reproducible con `python native/bench.py`.
+
+### El speedup cae con el tamaño del kernel, y no es un defecto
+
+En Python el costo es **por píxel**: lo que domina es el overhead de numpy por
+ventana —`region[active_mask]`, `np.min`—, no las celdas. Medido, un
+`gray_erode` sobre 128×128 tarda lo mismo con kernel 3×3 (0.0564 s) que con
+15×15 (0.0549 s), aunque el segundo tenga 25 veces más celdas.
+
+En Rust se invierte: el costo pasa a ser proporcional a las celdas activas. De
+ahí que el mismo port dé 242x en 3×3 y 8x en 15×15. Ocho veces sigue siendo una
+mejora, pero conviene no vender el número del 3×3 como si fuera general.
+
+Es también la puerta al siguiente paso real para kernels grandes: una
+descomposición tipo van Herk / Gil-Werman haría el costo independiente del
+tamaño del kernel.
 
 Un `vpx_open` con dos iteraciones sobre 512×512 pasa de unos 5 segundos a unos
 10 milisegundos. Ese es el punto: no es una optimización marginal, es la
@@ -106,17 +122,31 @@ Los detalles están en [cli_reference.md](./cli_reference.md).
 | Operación | Motor |
 |---|---|
 | `vpx_erode`, `vpx_dilate` | Rust |
-| `vpx_open`, `vpx_close`, `vpx_gradient`, `vpx_tophat`, `vpx_blackhat`, `vpx_boundary`, `vpx_hitmiss`, `vpx_reconstruct` | Rust por composición: se apoyan en las dos anteriores |
-| las 7 `gray_*` | Python |
+| `gray_erode`, `gray_dilate` | Rust, dtypes enteros |
+| `vpx_open`, `vpx_close`, `vpx_gradient`, `vpx_tophat`, `vpx_blackhat`, `vpx_boundary`, `vpx_hitmiss`, `vpx_reconstruct` | Rust por composición |
+| `gray_open`, `gray_close`, `gray_gradient`, `gray_tophat`, `gray_blackhat` | Rust por composición |
+| `gray_*` con dtype flotante | Python, a propósito |
 | `vpx_skeletonize`, `vpx_thin` | Python |
 
-Las compuestas no necesitaron una sola línea: ya estaban escritas como
-composición explícita de erosión y dilatación, y heredaron la aceleración
-completa. Es el dividendo de que `morphology_binary.py` no repitiera el motor.
+**17 de 19 operaciones**, y solo cuatro funciones nativas. Las trece compuestas
+no necesitaron una sola línea: ya estaban escritas como composición explícita de
+erosión y dilatación, y heredaron la aceleración completa. Es el dividendo de
+que ni `morphology_binary.py` ni `morphology_grayscale.py` repitieran el motor.
+
+### Por qué los flotantes se quedan en Python
+
+`Ord` en Rust es un orden total, y los flotantes no lo tienen. Reproducir bit a
+bit la propagación de `NaN` de `np.min` no vale el riesgo en un spike, así que
+el despacho mira `dtype.kind` y manda `float32`/`float64` al bucle de Python sin
+avisar: mismo resultado, solo más lento. Los ocho dtypes enteros —`uint8`,
+`int8`, `uint16`, `int16`, `uint32`, `int32`, `uint64`, `int64`— sí van al
+nativo. `int64` importa más de lo que parece: es el dtype por defecto de
+`np.array([[1, 2]])` en Linux.
 
 ## Dónde se engancha
 
-Un solo lugar, `apply_binary_operation` en `morphology_common.py`:
+Dos lugares simétricos en `morphology_common.py`, `apply_binary_operation` y
+`apply_grayscale_operation`. El binario:
 
 ```python
 if native_op is not None:
@@ -134,8 +164,18 @@ Va **después** de las tres validaciones y antes del bucle. Eso fija la frontera
 - el `* 255` se hace en Python, así que la convención de dominio de valores vive
   en un solo lado.
 
-`vpx_erode` y `vpx_dilate` pasan `native_op="erode"` / `"dilate"`. Una operación
-sin `native_op` cae al bucle de Python sin ninguna rama extra.
+El grayscale es igual, más el filtro de dtype:
+
+```python
+if native_op is not None and img.dtype.kind in _NATIVE_GRAYSCALE_KINDS:
+    backend = _backend.native()
+    if backend is not None:
+        resultado = backend.grayscale_op(img, kernel, int(iterations), native_op)
+        return resultado.astype(source.dtype, copy=False)
+```
+
+Las cuatro operaciones elementales pasan `native_op="erode"` / `"dilate"`. Una
+operación sin `native_op` cae al bucle de Python sin ninguna rama extra.
 
 ## Los tres detalles que rompen un port así
 
@@ -151,10 +191,15 @@ sin `native_op` cae al bucle de Python sin ninguna rama extra.
 
 ## Qué garantiza la paridad
 
-`test/test_backend_parity.py` — 231 tests que corren la misma entrada por los
+`test/test_backend_parity.py` — 463 tests que corren la misma entrada por los
 dos backends y exigen igualdad exacta de valores y de dtype. Más 13 en
 `test_cli_main.py` para las tres flags nuevas, incluida la rama de divergencia,
 que se alcanza reemplazando el despacho.
+
+El bloque grayscale agrega lo suyo: los ocho dtypes enteros con verificación de
+que el dtype se conserva, y dos tests sobre el camino que **no** se toma —
+que un flotante nunca llegue al nativo (se comprueba rompiéndolo: si lo tocara,
+explotaría) y que `NaN` siga propagándose por el bucle de Python.
 
 Es el complemento de `test_reference_scipy.py`, no una copia: aquel rodea cada
 imagen con un marco de fondo para que la operación nunca alcance el borde,
@@ -188,22 +233,72 @@ agregados, la misma mutación cae en 69 tests en vez de 15.
 Es la misma trampa que documenta `CLAUDE.md` para los kernels de radio chico,
 en otra forma: un test que parece cubrir el borde puede no estar mirándolo.
 
+El motor grayscale se escribió ya sabiendo esto, y aun así dos de sus tests
+sobrevivieron a la misma mutación aplicada solo a `sweep_gray`: uno usaba
+`kernel_diamond(7)` suelto y el otro `kernel_cross(7)`, ambos simétricos. Se
+parametrizaron sobre la lista completa, y la mutación pasó de 58 a 75 fallos.
+La receta para repetirlo está en la sección siguiente.
+
 La suite completa corre limpia con los dos: 556 tests en ambos modos.
+
+### Cómo repetir la prueba de mutación
+
+```bash
+cp native/src/lib.rs /tmp/lib.rs.bak
+# editar reflect(): reemplazar el cuerpo por `index.clamp(0, len - 1) as usize`
+cd native && maturin develop --release && cd ..
+pytest -q          # ~69 fallos, todos en test_backend_parity.py
+cp /tmp/lib.rs.bak native/src/lib.rs
+cd native && maturin develop --release && cd ..
+```
+
+Otras que vale la pena: sacar el `.rem_euclid` (rompe kernels más grandes que la
+imagen), quitar el `if len == 1` (rompe ejes de longitud 1), invertir
+`Op::Erode`/`Op::Dilate`, arrancar el acumulador de `sweep_gray` desde el centro
+en vez del primer offset activo (221 fallos), o mover el padding fuera del bucle
+de iteraciones.
+
+Si una mutación **no** hace fallar nada, eso no significa que el Rust esté bien:
+significa que ese comportamiento no está cubierto. Vale más una mutación que
+sobrevive que diez que mueren.
+
+### Simular la ausencia del nativo
+
+```bash
+mkdir -p /tmp/sin-nativo
+printf 'raise ModuleNotFoundError("No module named %s", name="vispyx_native")\n' \
+  "'vispyx_native'" > /tmp/sin-nativo/vispyx_native.py
+PYTHONPATH=/tmp/sin-nativo pytest -q     # 433 pasan, 6 se saltan
+```
+
+Tiene que ser `ModuleNotFoundError` y no un `ImportError` genérico: desde pytest
+8.2, `importorskip` solo trata el primero como dependencia ausente y deja
+propagar el segundo, porque un `ImportError` desde el cuerpo de un módulo indica
+un problema real. Con el genérico, la suite falla en la colección y parece un
+bug del paquete.
 
 ## Siguientes pasos
 
 En orden de rendimiento por esfuerzo:
 
-1. **`vpx_skeletonize`** (Zhang-Suen). Es el peor caso absoluto —dos pasadas
-   completas por iteración hasta converger, 0.43 s en 128×128— y el único que no
-   se beneficia en nada de este spike.
-2. **Los dos motores `gray_*`.** `min`/`max` sobre el soporte activo. Requiere
-   decidir el manejo de dtypes: lo razonable es `u8` nativo y caer a Python para
-   los exóticos, en vez de hacer genérico el crate desde el día uno.
-3. **`vpx_reconstruct` nativo.** Ya se acelera por composición, pero el bucle
-   geodésico sigue en Python y paga un cruce de frontera por iteración.
-4. **Liberar el GIL** en `binary_op`, para que el nativo no bloquee otros hilos
-   durante la pasada.
-5. **CI con wheels.** El repo no tiene `.github/` todavía. Antes de publicar
-   `vispyx-native` hace falta una matriz de `maturin-action`, y correr la suite
-   con `VISPYX_BACKEND` en `python` y `rust`.
+1. **`vpx_skeletonize`** (Zhang-Suen). El peor caso absoluto y lo único pesado
+   que queda: no escala con los píxeles sino con píxeles × iteraciones, y las
+   iteraciones crecen con el grosor de los objetos. Medido: 0.63 s en 128×128,
+   5.10 s en 256×256, **43.37 s en 512×512**. Sobre 1024×1024 son minutos.
+   `vpx_thin` hereda el problema.
+2. **CI con wheels.** El repo no tiene `.github/` todavía. Sin eso
+   `vispyx-native` no se puede publicar y `pip install vispyx[fast]` sigue sin
+   funcionar: el extra está declarado pero apunta a un paquete que no existe en
+   PyPI. Hace falta una matriz de `maturin-action` y correr la suite con
+   `VISPYX_BACKEND` en `python` y `rust`.
+3. **Liberar el GIL** en `binary_op` y `grayscale_op`, para que el nativo no
+   bloquee otros hilos durante la pasada.
+4. **van Herk / Gil-Werman** para kernels grandes, donde el speedup actual baja
+   a 8x. Haría el costo independiente del tamaño del kernel.
+5. **Flotantes en el motor grayscale**, si aparece la necesidad. Requiere
+   decidir y fijar por test la semántica de `NaN`.
+
+`vpx_reconstruct` **ya no está en la lista**: medido, el bucle geodésico está
+dominado por la dilatación, que es nativa. Con el backend puesto tarda 0.0766 s
+sobre 256×256 contra 28.16 s en Python puro, un 368x que salió gratis. Portar el
+bucle daría casi nada.

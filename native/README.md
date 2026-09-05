@@ -13,9 +13,13 @@ bit a bit**. Si no está instalado, `vispyx` funciona igual, solo más lento.
 | Operación | Estado |
 |---|---|
 | `vpx_erode`, `vpx_dilate` | nativo |
-| `vpx_open`, `vpx_close`, `vpx_gradient`, `vpx_tophat`, `vpx_blackhat`, `vpx_boundary`, `vpx_hitmiss`, `vpx_reconstruct` | nativo por composición: se apoyan en las dos anteriores |
-| `gray_*` | Python |
+| `gray_erode`, `gray_dilate` | nativo, dtypes enteros |
+| las 8 binarias compuestas | nativo por composición |
+| las 5 `gray_*` compuestas | nativo por composición |
+| `gray_*` con dtype flotante | Python, a propósito: `Ord` no cubre `NaN` |
 | `vpx_skeletonize`, `vpx_thin` | Python |
+
+17 de 19 operaciones, con cuatro funciones nativas.
 
 ## Instalación
 

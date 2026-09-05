@@ -9,8 +9,8 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **438 tests, 438 pasan, ~4.0 s** sin el backend nativo, y
-**669 tests, ~2.9 s** con él instalado (los 131 de paridad se suman, y el resto
+Estado verificado: **433 pasan y 6 se saltan, ~4.0 s** sin el backend nativo, y
+**901 tests, ~3.0 s** con él instalado (los 131 de paridad se suman, y el resto
 de la suite corre más rápido). La suite pasa entera en los dos modos:
 `VISPYX_BACKEND=python pytest -q` y `VISPYX_BACKEND=rust pytest -q`; ver
 [native_backend.md](./native_backend.md). (Python 3.13.13, numpy
@@ -41,7 +41,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | las tres `run_*` que no encajan en el molde, con I/O real |
 | `test_preprocessing.py` | 15 | qué hace `apply_clahe`, sus parámetros y su validación |
-| `test_backend_parity.py` | 231 | paridad exacta entre el motor de Python y el backend en Rust; se salta si el nativo no está instalado |
+| `test_backend_parity.py` | 463 | paridad exacta entre los dos motores, binario y grayscale, incluidos los ocho dtypes enteros; se salta si el nativo no está instalado |
 
 ## Qué se verifica de verdad
 
