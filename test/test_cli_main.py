@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 import pytest
 
-from vispyx import cli
+from vispyx import __version__, _backend, cli
 from vispyx import vpx_blackhat, vpx_boundary, vpx_tophat
 from vispyx.cli import METHODS, PATTERN_NAMES
 from vispyx.kernels import kernel_cross, kernel_diamond, kernel_disk, kernel_square
@@ -616,3 +616,148 @@ def test_un_metodo_en_la_lista_sin_rama_de_despacho_falla(imagen, monkeypatch):
 
     with pytest.raises(ValueError, match="Método no reconocido: vpx_inventado"):
         _correr(monkeypatch, ["vpx_inventado", imagen])
+
+
+# --- seleccion de backend, cronometrado y comparacion ---
+
+sin_nativo = pytest.mark.skipif(
+    not _backend.available(),
+    reason="el backend nativo es opcional; se instala desde native/",
+)
+
+
+def test_version_reporta_la_version_y_el_backend(monkeypatch, capsys):
+    """`--version` es el unico lugar donde alguien puede ver que motor tiene."""
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["--version"])
+
+    assert fallo.value.code == 0
+    salida = capsys.readouterr().out
+    assert __version__ in salida
+    assert "backend:" in salida
+
+
+@pytest.mark.parametrize("motor", ("auto", "python"))
+def test_backend_corre_y_time_reporta_el_motor(motor, imagen, tmp_path, monkeypatch, capsys):
+    salida = str(tmp_path / "salida.pgm")
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "--backend", motor, "--time", "-o", salida])
+
+    impreso = capsys.readouterr().out
+    assert "tiempo (" in impreso
+    assert f"Imagen guardada en: {salida}" in impreso
+
+
+def test_sin_time_no_se_imprime_ningun_tiempo(imagen, tmp_path, monkeypatch, capsys):
+    salida = str(tmp_path / "salida.pgm")
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "-o", salida])
+
+    assert "tiempo (" not in capsys.readouterr().out
+
+
+@sin_nativo
+def test_backend_rust_usa_el_motor_nativo(imagen, tmp_path, monkeypatch, capsys):
+    salida = str(tmp_path / "salida.pgm")
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "--backend", "rust", "--time", "-o", salida])
+
+    assert "tiempo (rust)" in capsys.readouterr().out
+
+
+@sin_nativo
+def test_backend_rust_y_python_dan_el_mismo_archivo(imagen, tmp_path, monkeypatch):
+    """La promesa del backend nativo, verificada desde la linea de comandos."""
+    rutas = {}
+    for motor in ("python", "rust"):
+        rutas[motor] = str(tmp_path / f"{motor}.pgm")
+        _correr(monkeypatch, ["vpx_open", imagen, "--backend", motor, "-o", rutas[motor]])
+
+    leida = {m: cv2.imread(r, cv2.IMREAD_GRAYSCALE) for m, r in rutas.items()}
+    np.testing.assert_array_equal(leida["rust"], leida["python"])
+
+
+def test_backend_desconocido_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--backend", "cuda"])
+
+    assert fallo.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_backend_rust_sin_el_paquete_instalado_sale_con_codigo_2(
+    imagen, monkeypatch, capsys
+):
+    monkeypatch.setattr(_backend, "available", lambda: False)
+
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--backend", "rust"])
+
+    assert fallo.value.code == 2
+    assert "vispyx-native" in capsys.readouterr().err
+
+
+def test_compare_y_backend_juntos_salen_con_codigo_2(imagen, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--compare", "--backend", "rust"])
+
+    assert fallo.value.code == 2
+    assert "no combina con --backend" in capsys.readouterr().err
+
+
+def test_compare_sin_el_paquete_instalado_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    monkeypatch.setattr(_backend, "available", lambda: False)
+
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--compare"])
+
+    assert fallo.value.code == 2
+    assert "vispyx-native" in capsys.readouterr().err
+
+
+@sin_nativo
+def test_compare_mide_los_dos_y_confirma_que_coinciden(
+    imagen, tmp_path, monkeypatch, capsys
+):
+    salida = str(tmp_path / "salida.pgm")
+
+    _correr(monkeypatch, ["vpx_open", imagen, "--compare", "-o", salida])
+
+    impreso = capsys.readouterr().out
+    assert "python" in impreso
+    assert "rust" in impreso
+    assert "resultados identicos: si" in impreso
+    assert f"Imagen guardada en: {salida}" in impreso
+
+
+@sin_nativo
+def test_compare_no_imprime_el_tiempo_suelto(imagen, tmp_path, monkeypatch, capsys):
+    """`--compare` ya trae su propia tabla; el `--time` de arriba estorbaria."""
+    salida = str(tmp_path / "salida.pgm")
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "--compare", "--time", "-o", salida])
+
+    assert "tiempo (" not in capsys.readouterr().out
+
+
+@sin_nativo
+def test_compare_denuncia_una_divergencia_y_sale_con_codigo_1(
+    imagen, monkeypatch, capsys
+):
+    """Que los dos motores difieran es un bug del paquete, no un error de uso.
+
+    Se fuerza reemplazando el despacho: es la unica forma de alcanzar la rama
+    sin romper el backend nativo a proposito.
+    """
+    respuestas = iter(
+        [np.zeros((4, 4), dtype=np.uint8), np.ones((4, 4), dtype=np.uint8)]
+    )
+    monkeypatch.setattr(cli, "_dispatch", lambda parser, args: next(respuestas))
+
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--compare"])
+
+    assert fallo.value.code == 1
+    capturado = capsys.readouterr()
+    assert "resultados identicos: NO, 16 pixeles distintos" in capturado.out
+    assert "los dos backends divergieron" in capturado.err

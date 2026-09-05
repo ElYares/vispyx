@@ -1,9 +1,12 @@
 import argparse
 import os
+import time
 
 import cv2
 import matplotlib
 import numpy as np
+
+from vispyx import __version__, _backend
 
 from vispyx.kernels import (
     _validate_size,
@@ -185,39 +188,25 @@ def _run_grayscale_method(image_path, method, kernel_size=3, iterations=1, kerne
     return method(img, kernel, iterations)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="CLI de procesamiento de imágenes con vispyx")
-    parser.add_argument(
-        "method",
-        choices=METHODS,
-        help="Método de procesamiento",
-    )
+BACKEND_CHOICES = ("auto", "python", "rust")
 
-    parser.add_argument("image_path", help="Ruta de la imagen a procesar")
-    parser.add_argument("--mask", "--mask-path", dest="mask_path", help="Ruta de la mascara para reconstruccion binaria")
-    parser.add_argument("--output", "-o", help="Ruta para guardar imagen procesada (opcional)", default=None)
-    parser.add_argument("--show", action="store_true", help="Mostrar imagen procesada en pantalla")
-    parser.add_argument("--clip", type=float, default=2.0, help="Límite de clipping para CLAHE")
-    parser.add_argument("--grid", type=int, default=8, help="Tamaño de cuadrícula para CLAHE")
-    parser.add_argument("--kernel-size", type=int, default=3, help="Tamaño del kernel (3, 5, 7...)")
-    parser.add_argument("--kernel", dest="kernel_size", type=int, help="Alias de --kernel-size")
-    parser.add_argument(
-        "--kernel-shape",
-        choices=KERNEL_SHAPES,
-        default="square",
-        help="Forma del elemento estructurante (para disk, el radio es --kernel-size // 2)",
-    )
-    parser.add_argument(
-        "--pattern",
-        choices=PATTERN_NAMES,
-        default=None,
-        help="Patron a detectar con vpx_hitmiss. `corner` combina las cuatro orientaciones",
-    )
-    parser.add_argument("--iterations", type=int, default=1, help="Número de iteraciones")
-    parser.add_argument("--max-iterations", type=int, default=None, help="Máximo de iteraciones para reconstruccion binaria")
+_TIMING_NOTE = "nota: el tiempo incluye la lectura de la imagen desde disco"
 
-    args = parser.parse_args()
 
+def _timed(function, *args):
+    """Devuelve ``(resultado, segundos)``."""
+    inicio = time.perf_counter()
+    resultado = function(*args)
+    return resultado, time.perf_counter() - inicio
+
+
+def _dispatch(parser, args):
+    """Ejecuta el método pedido y devuelve la imagen resultante.
+
+    Sale de ``main`` para poder cronometrarse y, con ``--compare``, correrse
+    dos veces sobre backends distintos. Incluye la lectura del archivo:
+    cada ``run_*`` abre la imagen por su cuenta.
+    """
     if args.method == "clahe":
         result = run_clahe(args.image_path, clip_limit=args.clip, grid=args.grid)
     elif args.method == "otsu":
@@ -272,6 +261,131 @@ def main():
         result = _run_grayscale_method(args.image_path, gray_blackhat, kernel_size=args.kernel_size, iterations=args.iterations, kernel_shape=args.kernel_shape)
     else:
         raise ValueError(f"Método no reconocido: {args.method}")
+
+    return result
+
+
+def _compare_backends(parser, args):
+    """Corre la misma operacion por los dos motores, mide y compara.
+
+    Es la razon por la que existe ``--compare`` y no basta con cronometrar dos
+    invocaciones desde la shell: asi el arranque del interprete queda fuera de
+    la medicion, y las dos corridas ven exactamente la misma entrada.
+    """
+    if not _backend.available():
+        parser.error(
+            "--compare corre los dos motores, y el paquete opcional "
+            "vispyx-native no esta instalado. Instalalo con "
+            "`cd native && maturin develop --release`"
+        )
+
+    resultados = {}
+    tiempos = {}
+    for modo in ("python", "rust"):
+        with _backend.override(modo):
+            resultados[modo], tiempos[modo] = _timed(_dispatch, parser, args)
+
+    referencia = tiempos["python"]
+    print("{:<10}{:>12}{:>12}".format("backend", "tiempo", "relativo"))
+    for modo in ("python", "rust"):
+        acelera = referencia / tiempos[modo] if tiempos[modo] > 0 else float("inf")
+        print("{:<10}{:>11.4f}s{:>11.1f}x".format(modo, tiempos[modo], acelera))
+
+    distintos = int(np.count_nonzero(resultados["python"] != resultados["rust"]))
+    if distintos:
+        print("resultados identicos: NO, {} pixeles distintos".format(distintos))
+        print(_TIMING_NOTE)
+        # Divergir es un bug del paquete, no un uso incorrecto del comando: sale
+        # con codigo distinto de cero para que un script lo note.
+        parser.exit(1, "los dos backends divergieron\n")
+
+    print("resultados identicos: si")
+    print(_TIMING_NOTE)
+    return resultados["rust"]
+
+
+def main():
+    parser = argparse.ArgumentParser(description="CLI de procesamiento de imágenes con vispyx")
+    parser.add_argument(
+        "method",
+        choices=METHODS,
+        help="Método de procesamiento",
+    )
+
+    parser.add_argument("image_path", help="Ruta de la imagen a procesar")
+    parser.add_argument("--mask", "--mask-path", dest="mask_path", help="Ruta de la mascara para reconstruccion binaria")
+    parser.add_argument("--output", "-o", help="Ruta para guardar imagen procesada (opcional)", default=None)
+    parser.add_argument("--show", action="store_true", help="Mostrar imagen procesada en pantalla")
+    parser.add_argument("--clip", type=float, default=2.0, help="Límite de clipping para CLAHE")
+    parser.add_argument("--grid", type=int, default=8, help="Tamaño de cuadrícula para CLAHE")
+    parser.add_argument("--kernel-size", type=int, default=3, help="Tamaño del kernel (3, 5, 7...)")
+    parser.add_argument("--kernel", dest="kernel_size", type=int, help="Alias de --kernel-size")
+    parser.add_argument(
+        "--kernel-shape",
+        choices=KERNEL_SHAPES,
+        default="square",
+        help="Forma del elemento estructurante (para disk, el radio es --kernel-size // 2)",
+    )
+    parser.add_argument(
+        "--pattern",
+        choices=PATTERN_NAMES,
+        default=None,
+        help="Patron a detectar con vpx_hitmiss. `corner` combina las cuatro orientaciones",
+    )
+    parser.add_argument("--iterations", type=int, default=1, help="Número de iteraciones")
+    parser.add_argument("--max-iterations", type=int, default=None, help="Máximo de iteraciones para reconstruccion binaria")
+    parser.add_argument(
+        "--backend",
+        choices=BACKEND_CHOICES,
+        default=None,
+        help=(
+            "Motor que ejecuta la operacion. Tiene prioridad sobre la variable "
+            "de entorno VISPYX_BACKEND. `rust` requiere el paquete opcional "
+            "vispyx-native"
+        ),
+    )
+    parser.add_argument(
+        "--time",
+        action="store_true",
+        help="Imprimir cuanto tardo la operacion",
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help=(
+            "Correr la operacion con los dos backends, comparar tiempos y "
+            "verificar que el resultado sea identico. Incompatible con --backend"
+        ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="vispyx {} (backend: {})".format(__version__, _backend.describe()),
+    )
+
+    args = parser.parse_args()
+
+    if args.compare and args.backend:
+        parser.error("--compare corre los dos backends: no combina con --backend")
+    if args.backend == "rust" and not _backend.available():
+        parser.error(
+            "--backend rust necesita el paquete opcional vispyx-native, y no "
+            "esta instalado. Instalalo con `cd native && maturin develop --release`"
+        )
+
+    if args.compare:
+        result = _compare_backends(parser, args)
+    elif args.backend:
+        with _backend.override(args.backend):
+            result, transcurrido = _timed(_dispatch, parser, args)
+            motor = _backend.name()
+    else:
+        result, transcurrido = _timed(_dispatch, parser, args)
+        motor = _backend.name()
+
+    if args.time and not args.compare:
+        print("tiempo ({}): {:.4f}s".format(motor, transcurrido))
+        print(_TIMING_NOTE)
 
     if args.output:
         output_dir = os.path.dirname(args.output)
