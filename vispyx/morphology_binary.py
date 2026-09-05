@@ -18,6 +18,7 @@ def vpx_erode(image, kernel=None, iterations=1):
         kernel,
         iterations,
         reducer=lambda region, active_count: int(np.sum(region) == active_count),
+        native_op="erode",
     )
 
 
@@ -28,6 +29,7 @@ def vpx_dilate(image, kernel=None, iterations=1):
         kernel,
         iterations,
         reducer=lambda region, _active_count: int(np.any(region)),
+        native_op="dilate",
     )
 
 

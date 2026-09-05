@@ -39,6 +39,13 @@ dev = [
   "pytest",
   "scipy",
 ]
+# Backend opcional en Rust. `vispyx` es y sigue siendo un paquete puro de
+# Python: este extra solo acelera, nunca hace falta. Todavia no esta publicado
+# en PyPI, asi que por ahora se instala desde el repo con
+# `cd native && maturin develop --release`; ver native/README.md.
+fast = [
+  "vispyx-native",
+]
 
 [project.scripts]
 vispyx = "vispyx.cli:main"
