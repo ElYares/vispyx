@@ -2,6 +2,27 @@
 
 ## No publicado
 
+### Zhang-Suen
+
+**`vpx_skeletonize` y `vpx_thin` corren en Rust: las 19 operaciones aceleradas.**
+
+Era lo unico pesado que quedaba: Zhang-Suen escala con pixeles x iteraciones, y
+las iteraciones con el grosor de los objetos. Medido sobre un disco:
+**87.8 s -> 0.11 s en 512x512 (774x)**, 744x en 256x256. Resultados identicos bit
+a bit.
+
+- quinta funcion nativa, `zhang_suen`, con motor propio: no reusa `sweep`
+  porque el padding es de **ceros**, hay dos subpasadas y el borrado es diferido
+- **el bucle de convergencia vive en Rust**, no en Python: cruzar la frontera por
+  iteracion costaria una copia del arreglo cada vez
+- el despacho **pregunta** a `supported_ops()` antes de llamar: un
+  `vispyx-native` compilado antes de este cambio cae al bucle de Python en vez
+  de romper
+- 47 tests de paridad nuevos (948 en total con el nativo). Verificados por
+  mutacion: siete mutaciones del Rust, las siete mueren
+- `native/bench.py` mide Zhang-Suen sobre un disco grueso: sobre ruido converge
+  en dos o tres pasadas y no mide nada
+
 ### Motor grayscale
 
 **El motor grayscale tambien corre en Rust: 17 de 19 operaciones aceleradas.**

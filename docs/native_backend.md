@@ -1,7 +1,8 @@
 # Backend nativo en Rust
 
 Estado: **spike**. Cubre los dos motores de ventana deslizante, binario y
-grayscale. Distribución aparte, opcional, en `native/`.
+grayscale, y el adelgazamiento de Zhang-Suen. Distribución aparte, opcional, en
+`native/`.
 
 ## Qué problema resuelve
 
@@ -18,6 +19,8 @@ gray_erode  3x3  x1   256x256     0.2008s    0.0008s      242x
 gray_erode  7x7  x1   256x256     0.2025s    0.0051s       40x
 gray_erode 15x15 x1   256x256     0.2266s    0.0295s        8x
 gray_open   3x3  x1   256x256     0.4465s    0.0017s      261x
+vpx_skeletonize       256x256    11.2146s    0.0151s      744x
+vpx_skeletonize       512x512    87.8276s    0.1135s      774x
 ```
 
 Reproducible con `python native/bench.py`.
@@ -126,9 +129,9 @@ Los detalles están en [cli_reference.md](./cli_reference.md).
 | `vpx_open`, `vpx_close`, `vpx_gradient`, `vpx_tophat`, `vpx_blackhat`, `vpx_boundary`, `vpx_hitmiss`, `vpx_reconstruct` | Rust por composición |
 | `gray_open`, `gray_close`, `gray_gradient`, `gray_tophat`, `gray_blackhat` | Rust por composición |
 | `gray_*` con dtype flotante | Python, a propósito |
-| `vpx_skeletonize`, `vpx_thin` | Python |
+| `vpx_skeletonize`, `vpx_thin` | Rust, motor propio |
 
-**17 de 19 operaciones**, y solo cuatro funciones nativas. Las trece compuestas
+**Las 19 operaciones**, con cinco funciones nativas. Las trece compuestas
 no necesitaron una sola línea: ya estaban escritas como composición explícita de
 erosión y dilatación, y heredaron la aceleración completa. Es el dividendo de
 que ni `morphology_binary.py` ni `morphology_grayscale.py` repitieran el motor.
@@ -177,6 +180,33 @@ if native_op is not None and img.dtype.kind in _NATIVE_GRAYSCALE_KINDS:
 Las cuatro operaciones elementales pasan `native_op="erode"` / `"dilate"`. Una
 operación sin `native_op` cae al bucle de Python sin ninguna rama extra.
 
+### Zhang-Suen, el tercer enganche
+
+`vpx_skeletonize` no pasa por ninguno de los dos motores de ventana: padding de
+**ceros**, dos subpasadas y borrado diferido. Tiene su propio despacho en
+`morphology_binary.py`, también después de las validaciones:
+
+```python
+backend = _backend.native()
+if backend is not None and "zhang_suen" in backend.supported_ops():
+    limit = None if max_iterations is None else int(max_iterations)
+    return backend.zhang_suen(img, limit) * 255
+```
+
+Dos diferencias con los otros enganches, las dos a propósito:
+
+- **pregunta antes de llamar.** Un `vispyx-native` compilado antes de este
+  cambio no trae `zhang_suen`; en vez de romper, cae al bucle de Python;
+- **el bucle de convergencia vive en Rust.** Cruzar la frontera por iteración
+  costaría una copia del arreglo cada vez, y Zhang-Suen puede iterar cientos de
+  veces sobre objetos gruesos.
+
+En Rust, el buffer lleva un anillo de ceros de un píxel que nunca se escribe:
+ese anillo *es* el padding, y los ocho vecinos se leen sin chequear límites.
+Una iteración son las dos subpasadas, y el corte por `max_iterations` se evalúa
+después del de convergencia, igual que en Python. `vpx_thin` es
+`vpx_skeletonize` con `max_iterations`, así que hereda todo.
+
 ## Los tres detalles que rompen un port así
 
 1. **Padding por reflejo.** `np.pad(mode="reflect")` espeja *sin repetir el
@@ -191,7 +221,7 @@ operación sin `native_op` cae al bucle de Python sin ninguna rama extra.
 
 ## Qué garantiza la paridad
 
-`test/test_backend_parity.py` — 463 tests que corren la misma entrada por los
+`test/test_backend_parity.py` — 510 tests que corren la misma entrada por los
 dos backends y exigen igualdad exacta de valores y de dtype. Más 13 en
 `test_cli_main.py` para las tres flags nuevas, incluida la rama de divergencia,
 que se alcanza reemplazando el despacho.
@@ -200,6 +230,11 @@ El bloque grayscale agrega lo suyo: los ocho dtypes enteros con verificación de
 que el dtype se conserva, y dos tests sobre el camino que **no** se toma —
 que un flotante nunca llegue al nativo (se comprueba rompiéndolo: si lo tocara,
 explotaría) y que `NaN` siga propagándose por el bucle de Python.
+
+Zhang-Suen suma 47: ruido en tres densidades, figuras gruesas cortadas en
+varios `max_iterations` —para comparar el estado a mitad de camino y no solo el
+final—, bandas pegadas a cada borde, imágenes diminutas, una vista no contigua
+y un build viejo sin `zhang_suen`, que tiene que caer a Python sin llamarlo.
 
 Es el complemento de `test_reference_scipy.py`, no una copia: aquel rodea cada
 imagen con un marco de fondo para que la operación nunca alcance el borde,
@@ -241,6 +276,19 @@ La receta para repetirlo está en la sección siguiente.
 
 La suite completa corre limpia con los dos: 556 tests en ambos modos.
 
+Zhang-Suen se verificó igual, con siete mutaciones sobre el Rust. Todas mueren
+en los tests de Zhang-Suen:
+
+| Mutación | Fallos (de 47) |
+|---|---|
+| anillo de padding en unos en vez de ceros | 38 |
+| borrar en el acto en vez de diferido | 36 |
+| intercambiar las condiciones de las dos subpasadas | 27 |
+| contar transiciones sin cerrar el ciclo p9 → p2 | 39 |
+| cortar por `max_iterations` una pasada tarde | 10 |
+| una sola subpasada por iteración | 27 |
+| aceptar 7 vecinos activos en vez de 6 | 17 |
+
 ### Cómo repetir la prueba de mutación
 
 ```bash
@@ -281,21 +329,16 @@ bug del paquete.
 
 En orden de rendimiento por esfuerzo:
 
-1. **`vpx_skeletonize`** (Zhang-Suen). El peor caso absoluto y lo único pesado
-   que queda: no escala con los píxeles sino con píxeles × iteraciones, y las
-   iteraciones crecen con el grosor de los objetos. Medido: 0.63 s en 128×128,
-   5.10 s en 256×256, **43.37 s en 512×512**. Sobre 1024×1024 son minutos.
-   `vpx_thin` hereda el problema.
-2. **CI con wheels.** El repo no tiene `.github/` todavía. Sin eso
+1. **CI con wheels.** El repo no tiene `.github/` todavía. Sin eso
    `vispyx-native` no se puede publicar y `pip install vispyx[fast]` sigue sin
    funcionar: el extra está declarado pero apunta a un paquete que no existe en
    PyPI. Hace falta una matriz de `maturin-action` y correr la suite con
    `VISPYX_BACKEND` en `python` y `rust`.
-3. **Liberar el GIL** en `binary_op` y `grayscale_op`, para que el nativo no
+2. **Liberar el GIL** en `binary_op`, `grayscale_op` y `zhang_suen`, para que el nativo no
    bloquee otros hilos durante la pasada.
-4. **van Herk / Gil-Werman** para kernels grandes, donde el speedup actual baja
+3. **van Herk / Gil-Werman** para kernels grandes, donde el speedup actual baja
    a 8x. Haría el costo independiente del tamaño del kernel.
-5. **Flotantes en el motor grayscale**, si aparece la necesidad. Requiere
+4. **Flotantes en el motor grayscale**, si aparece la necesidad. Requiere
    decidir y fijar por test la semántica de `NaN`.
 
 `vpx_reconstruct` **ya no está en la lista**: medido, el bucle geodésico está
