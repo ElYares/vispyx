@@ -42,6 +42,8 @@ from vispyx import (
     vpx_hitmiss,
     vpx_open,
     vpx_reconstruct,
+    vpx_skeletonize,
+    vpx_thin,
     vpx_tophat,
 )
 
@@ -341,3 +343,105 @@ def test_the_native_engine_declares_its_dtypes():
     with _backend.override("rust"):
         declarados = _backend.native().supported_grayscale_dtypes()
     assert set(declarados) == {np.dtype(d).name for d in NATIVE_DTYPES}
+
+
+# --- Zhang-Suen ---
+#
+# El unico motor que no pasa por `sweep`: padding de ceros, dos subpasadas con
+# borrado diferido y el bucle de convergencia adentro de Rust. Los tres son
+# lugares donde un port se equivoca sin que una imagen chica lo delate, por eso
+# las figuras gruesas: un esqueleto de ruido converge en dos o tres pasadas y no
+# ejercita el orden entre subpasadas.
+
+
+def thick_shapes():
+    """Figuras que necesitan muchas pasadas y llegan al borde de la imagen."""
+    image = np.zeros((24, 31), dtype=np.uint8)
+    image[2:10, 3:28] = 255
+    image[:, 13:19] = 255
+    yy, xx = np.mgrid[:24, :31]
+    image[(yy - 17) ** 2 + (xx - 7) ** 2 <= 30] = 255
+    return image
+
+
+def test_the_native_engine_declares_zhang_suen():
+    with _backend.override("rust"):
+        assert "zhang_suen" in _backend.native().supported_ops()
+
+
+@pytest.mark.parametrize("max_iterations", (None, 1, 2, 3, 5, 50))
+@pytest.mark.parametrize("density", (0.3, 0.6, 0.9))
+def test_skeletonize_matches_on_noise(max_iterations, density):
+    image = noise((19, 17), seed=113, density=density)
+    assert_identical(*both_backends(vpx_skeletonize, image, max_iterations))
+
+
+@pytest.mark.parametrize("max_iterations", (None, 1, 2, 3, 4, 6))
+def test_skeletonize_matches_on_thick_shapes(max_iterations):
+    """Cada corte intermedio compara el estado a mitad de camino, no solo el final."""
+    assert_identical(*both_backends(vpx_skeletonize, thick_shapes(), max_iterations))
+
+
+@pytest.mark.parametrize("iterations", (1, 2, 4))
+def test_thin_matches(iterations):
+    assert_identical(*both_backends(vpx_thin, thick_shapes(), iterations))
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ((1, 1), (1, 9), (9, 1), (2, 2), (3, 3), (3, 4)),
+    ids=("1x1", "1x9", "9x1", "2x2", "3x3", "3x4"),
+)
+@pytest.mark.parametrize("density", (0.5, 1.0))
+def test_skeletonize_matches_on_tiny_images(shape, density):
+    """Imagenes donde casi todo pixel toca el borde de ceros."""
+    image = noise(shape, seed=127, density=density)
+    assert_identical(*both_backends(vpx_skeletonize, image))
+
+
+@pytest.mark.parametrize("side", ("top", "bottom", "left", "right"))
+def test_skeletonize_matches_against_each_border(side):
+    """Una banda gruesa pegada a un lado: ahi el relleno de ceros decide."""
+    image = np.zeros((15, 15), dtype=np.uint8)
+    band = {
+        "top": np.s_[:5, :],
+        "bottom": np.s_[-5:, :],
+        "left": np.s_[:, :5],
+        "right": np.s_[:, -5:],
+    }[side]
+    image[band] = 255
+    image[7, 2:13] = 255
+    assert_identical(*both_backends(vpx_skeletonize, image))
+
+
+def test_skeletonize_non_contiguous_input_matches():
+    image = thick_shapes()[::-1, ::2]
+    assert not image.flags["C_CONTIGUOUS"]
+    assert_identical(*both_backends(vpx_skeletonize, image))
+
+
+def test_skeletonize_falls_back_on_an_old_native_build(monkeypatch):
+    """Un vispyx-native sin Zhang-Suen no debe romper `vpx_skeletonize`."""
+    image = thick_shapes()
+    with _backend.override("python"):
+        expected = vpx_skeletonize(image)
+
+    with _backend.override("rust"):
+        backend = _backend.native()
+        monkeypatch.setattr(backend, "supported_ops", lambda: ["erode", "dilate"])
+
+        def explota(*args, **kwargs):
+            raise AssertionError("un build sin zhang_suen no deberia llamarlo")
+
+        monkeypatch.setattr(backend, "zhang_suen", explota)
+        actual = vpx_skeletonize(image)
+
+    assert_identical(expected, actual)
+
+
+def test_skeletonize_validation_errors_still_come_from_python():
+    with _backend.override("rust"):
+        with pytest.raises(ValueError, match="image must not be empty"):
+            vpx_skeletonize(np.zeros((0, 3), dtype=np.uint8))
+        with pytest.raises(ValueError, match="iterations must be a positive integer"):
+            vpx_skeletonize(thick_shapes(), max_iterations=0)
