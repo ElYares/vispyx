@@ -10,7 +10,15 @@ import time
 
 import numpy as np
 
-from vispyx import _backend, gray_erode, gray_open, kernel_square, vpx_erode, vpx_open
+from vispyx import (
+    _backend,
+    gray_erode,
+    gray_open,
+    kernel_square,
+    vpx_erode,
+    vpx_open,
+    vpx_skeletonize,
+)
 
 CASES = (
     ("vpx_erode   3x3  x1", vpx_erode, 3, 1),
@@ -63,6 +71,31 @@ def main():
                 f"{python_seconds:>9.4f}s {rust_seconds:>9.4f}s "
                 f"{python_seconds / rust_seconds:>8.0f}x"
             )
+
+    # Zhang-Suen no toma kernel y escala con pixeles x iteraciones, y las
+    # iteraciones con el grosor de los objetos: sobre ruido converge en dos o
+    # tres pasadas y no mide nada. Un disco grueso es el caso que duele.
+    for size in (128, 256, 512):
+        yy, xx = np.mgrid[:size, :size]
+        radius = size * 0.4
+        image = (((yy - size / 2) ** 2 + (xx - size / 2) ** 2) < radius**2).astype(np.uint8) * 255
+
+        with _backend.override("python"):
+            start = time.perf_counter()
+            expected = vpx_skeletonize(image)
+            python_seconds = time.perf_counter() - start
+        with _backend.override("rust"):
+            start = time.perf_counter()
+            actual = vpx_skeletonize(image)
+            rust_seconds = time.perf_counter() - start
+
+        assert np.array_equal(expected, actual), "los backends divergieron"
+
+        print(
+            f"{'vpx_skeletonize':<20} {size:>4}x{size:<4} "
+            f"{python_seconds:>9.4f}s {rust_seconds:>9.4f}s "
+            f"{python_seconds / rust_seconds:>8.0f}x"
+        )
 
 
 if __name__ == "__main__":
