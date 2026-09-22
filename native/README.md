@@ -23,7 +23,9 @@ Las 19 operaciones, con cinco funciones nativas.
 
 ## Instalación
 
-Todavía no está publicado en PyPI, así que se instala desde este directorio:
+Todavía no está publicado en PyPI. El CI ya construye los wheels y sabe
+publicarlos con un tag `native-v*` (ver `docs/native_backend.md`, "Releases");
+mientras tanto se instala desde este directorio:
 
 ```bash
 pip install maturin

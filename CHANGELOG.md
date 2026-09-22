@@ -2,6 +2,24 @@
 
 ## No publicado
 
+### CI y wheels de vispyx-native
+
+**El repo tiene CI por primera vez**, y `vispyx-native` ya se puede publicar.
+`.github/workflows/ci.yml` corre en cada push y PR:
+
+- la suite sin el nativo (Python 3.9 y 3.13), y con el nativo dos veces:
+  `VISPYX_BACKEND=rust` y `VISPYX_BACKEND=python`. Mas `cargo fmt --check` y
+  `cargo clippy -D warnings`
+- wheels para Linux x86_64, macOS universal2 y Windows x86_64, Python 3.9 a 3.13.
+  Cada wheel se instala con `--no-index` y se importa fuera del repo
+- publicacion en PyPI solo con un tag `native-v*`, con trusted publishing
+  (OIDC) y sin tokens. Verifica que el tag coincida con la version del crate.
+  Falta registrar el publisher en pypi.org: es una accion de la cuenta, fuera
+  del repo
+- con `VISPYX_BACKEND=rust`, `test_backend_parity.py` ya no puede saltarse: si
+  el nativo falta, la coleccion falla. Sin eso, un nativo mal instalado dejaba
+  la suite en verde sin tocar Rust
+
 ### Zhang-Suen
 
 **`vpx_skeletonize` y `vpx_thin` corren en Rust: las 19 operaciones aceleradas.**
