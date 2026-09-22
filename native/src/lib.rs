@@ -193,6 +193,136 @@ fn sweep_gray<T: Copy + Ord>(
     }
 }
 
+/// Sliding min or max of width `k` over `line`, van Herk / Gil-Werman style.
+///
+/// `line` is cut into blocks of `k`. `prefix[i]` accumulates from the start of
+/// i's block up to i, `suffix[i]` from i to the end of its block. Any window of
+/// `k` starting at `x` covers the tail of one block and the head of the next,
+/// so its extreme is `combine(suffix[x], prefix[x + k - 1])`: three comparisons
+/// per element, whatever `k` is.
+///
+/// Writes `line.len() - k + 1` values into `out`.
+fn van_herk_line<T: Copy + Ord>(
+    line: &[T],
+    k: usize,
+    op: Op,
+    prefix: &mut [T],
+    suffix: &mut [T],
+    out: &mut [T],
+) {
+    let n = line.len();
+    let combine = |a: T, b: T| if op == Op::Erode { a.min(b) } else { a.max(b) };
+
+    for i in 0..n {
+        prefix[i] = if i % k == 0 {
+            line[i]
+        } else {
+            combine(prefix[i - 1], line[i])
+        };
+    }
+    for i in (0..n).rev() {
+        // El ultimo bloque puede quedar incompleto: su final es `n - 1`.
+        let block_end = i + 1 == n || (i + 1) % k == 0;
+        suffix[i] = if block_end {
+            line[i]
+        } else {
+            combine(suffix[i + 1], line[i])
+        };
+    }
+    for x in 0..=n - k {
+        out[x] = combine(suffix[x], prefix[x + k - 1]);
+    }
+}
+
+/// One erosion or dilation by a solid `kh x kw` rectangle, separably.
+///
+/// Min over a rectangle is min over columns of the min over rows, and that
+/// stays exact with reflection *as long as both passes run over the fully
+/// reflected image*: the row pass covers the padding rows too, so the column
+/// pass sees exactly what `np.pad(mode="reflect")` would have put there.
+fn van_herk_rect<T: Copy + Ord + Default>(
+    src: &[T],
+    height: usize,
+    width: usize,
+    kh: usize,
+    kw: usize,
+    op: Op,
+    dst: &mut [T],
+) {
+    let (pad_y, pad_x) = (kh / 2, kw / 2);
+    let padded_h = height + 2 * pad_y;
+    let padded_w = width + 2 * pad_x;
+    let longest = padded_h.max(padded_w);
+
+    let mut line = vec![T::default(); longest];
+    let mut prefix = vec![T::default(); longest];
+    let mut suffix = vec![T::default(); longest];
+    let mut out = vec![T::default(); longest];
+
+    // Pasada por filas: cada fila reflejada de la imagen, reflejada tambien en
+    // x, queda reducida a `width` valores. `rows` guarda las `padded_h` filas.
+    let mut rows = vec![T::default(); padded_h * width];
+    for py in 0..padded_h {
+        let sy = reflect(py as isize - pad_y as isize, height as isize);
+        for (px, slot) in line[..padded_w].iter_mut().enumerate() {
+            let sx = reflect(px as isize - pad_x as isize, width as isize);
+            *slot = src[sy * width + sx];
+        }
+        van_herk_line(
+            &line[..padded_w],
+            kw,
+            op,
+            &mut prefix[..padded_w],
+            &mut suffix[..padded_w],
+            &mut out[..width],
+        );
+        rows[py * width..(py + 1) * width].copy_from_slice(&out[..width]);
+    }
+
+    // Pasada por columnas sobre el resultado anterior.
+    for x in 0..width {
+        for py in 0..padded_h {
+            line[py] = rows[py * width + x];
+        }
+        van_herk_line(
+            &line[..padded_h],
+            kh,
+            op,
+            &mut prefix[..padded_h],
+            &mut suffix[..padded_h],
+            &mut out[..height],
+        );
+        for y in 0..height {
+            dst[y * width + x] = out[y];
+        }
+    }
+}
+
+/// A kernel with every cell active, as `(height, width)`. `None` otherwise.
+///
+/// Solo esos van por van Herk. Un kernel con huecos no es separable en dos
+/// pasadas 1D, y sigue por `sweep`.
+fn solid_rect(kernel: &numpy::ndarray::ArrayView2<u8>) -> Option<(usize, usize)> {
+    if kernel.iter().all(|&cell| cell != 0) {
+        Some(kernel.dim())
+    } else {
+        None
+    }
+}
+
+/// Solid kernels at least this big go through van Herk; smaller ones sweep.
+///
+/// Medido sobre 256x256. En grises el sweep cuesta por celda activa y van Herk
+/// ya gana en 5x5 (1.65 ms contra 2.70 ms).
+const VAN_HERK_MIN_CELLS_GRAY: usize = 25;
+
+/// El binario tiene salida temprana: la erosion corta en el primer 0 y la
+/// dilatacion en el primer 1. Sobre ruido eso gana siempre, hasta en 31x31
+/// (1.3 ms contra 2.0 ms). Sobre una mascara realista no: un disco dilatado con
+/// 31x31 tarda 145 ms por sweep y 2.2 ms por van Herk. Desde 7x7 van Herk gana
+/// en el disco, y su costo no depende de la imagen.
+const VAN_HERK_MIN_CELLS_BINARY: usize = 49;
+
 /// Apply `iterations` binary erosions or dilations.
 ///
 /// `image` and `kernel` are expected to hold only zeros and ones; the caller
@@ -218,17 +348,21 @@ fn binary_op<'py>(
     // so a sliced or transposed view lands here correctly.
     let mut current: Vec<u8> = image.iter().copied().collect();
     let mut next = vec![0u8; current.len()];
+    let rect = solid_rect(&kernel).filter(|&(kh, kw)| kh * kw >= VAN_HERK_MIN_CELLS_BINARY);
 
     for _ in 0..iterations {
-        sweep(
-            &current,
-            height as isize,
-            width as isize,
-            &offsets,
-            radius,
-            op,
-            &mut next,
-        );
+        match rect {
+            Some((kh, kw)) => van_herk_rect(&current, height, width, kh, kw, op, &mut next),
+            None => sweep(
+                &current,
+                height as isize,
+                width as isize,
+                &offsets,
+                radius,
+                op,
+                &mut next,
+            ),
+        }
         std::mem::swap(&mut current, &mut next);
     }
 
@@ -246,7 +380,7 @@ fn run_grayscale<'py, T>(
     op: Op,
 ) -> PyResult<Bound<'py, PyAny>>
 where
-    T: numpy::Element + Copy + Ord,
+    T: numpy::Element + Copy + Ord + Default,
 {
     let image = image.as_array();
     let kernel = kernel.as_array();
@@ -256,17 +390,21 @@ where
 
     let mut current: Vec<T> = image.iter().copied().collect();
     let mut next = current.clone();
+    let rect = solid_rect(&kernel).filter(|&(kh, kw)| kh * kw >= VAN_HERK_MIN_CELLS_GRAY);
 
     for _ in 0..iterations {
-        sweep_gray(
-            &current,
-            height as isize,
-            width as isize,
-            &offsets,
-            radius,
-            op,
-            &mut next,
-        );
+        match rect {
+            Some((kh, kw)) => van_herk_rect(&current, height, width, kh, kw, op, &mut next),
+            None => sweep_gray(
+                &current,
+                height as isize,
+                width as isize,
+                &offsets,
+                radius,
+                op,
+                &mut next,
+            ),
+        }
         std::mem::swap(&mut current, &mut next);
     }
 
