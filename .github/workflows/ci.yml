@@ -1,0 +1,144 @@
+# Suite con y sin el backend nativo, wheels de vispyx-native, y publicacion en
+# PyPI solo con un tag `native-v*`. Ver docs/native_backend.md, "Releases".
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["native-v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Sin el nativo: los tests de paridad se saltan y todo lo demas corre sobre
+  # los bucles de Python, que son la implementacion de referencia.
+  test-python:
+    name: tests sin nativo (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - name: el nativo no esta instalado
+        run: python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('vispyx_native') is not None)"
+      - run: pytest -q -rs
+
+  # Con el nativo: la suite corre dos veces. Con VISPYX_BACKEND=rust los tests
+  # de paridad no pueden saltarse (test_backend_parity.py lo exige), y con
+  # VISPYX_BACKEND=python se verifica el fallback con el crate presente.
+  test-native:
+    name: tests con nativo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: cargo fmt y clippy
+        working-directory: native
+        run: |
+          cargo fmt --check
+          cargo clippy --release -- -D warnings
+      - run: pip install -e ".[dev]" ./native
+      - name: suite, motor rust
+        run: pytest -q
+        env:
+          VISPYX_BACKEND: rust
+      - name: suite, motor python con el nativo instalado
+        run: pytest -q
+        env:
+          VISPYX_BACKEND: python
+
+  wheels:
+    name: wheels ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64
+            manylinux: auto
+          - name: macos-universal2
+            os: macos-14
+            target: universal2-apple-darwin
+          - name: windows-x86_64
+            os: windows-latest
+            target: x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # La ultima de la lista queda como `python` por defecto.
+          python-version: |
+            3.9
+            3.10
+            3.11
+            3.12
+            3.13
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: native
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out dist --find-interpreter
+      - name: el wheel se instala sin compilador
+        shell: bash
+        run: |
+          python -m pip install vispyx-native --no-index --find-links native/dist --force-reinstall
+          cd "$RUNNER_TEMP"
+          python -c "import vispyx_native; print(vispyx_native.__version__, vispyx_native.supported_ops())"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.name }}
+          path: native/dist
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: native
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: native/dist
+
+  # Trusted publishing (OIDC): no hay tokens en el repo. Requiere que el dueno
+  # de la cuenta registre este workflow como publisher de vispyx-native en
+  # pypi.org, con el environment `pypi`.
+  publish:
+    name: publicar vispyx-native en PyPI
+    if: startsWith(github.ref, 'refs/tags/native-v')
+    needs: [test-python, test-native, wheels, sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: el tag coincide con la version del crate
+        run: |
+          tag="${GITHUB_REF_NAME#native-v}"
+          crate="$(grep -m1 '^version' native/Cargo.toml | cut -d'"' -f2)"
+          echo "tag=$tag crate=$crate"
+          test "$tag" = "$crate"
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
