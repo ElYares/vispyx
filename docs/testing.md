@@ -31,7 +31,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | Archivo | Tests | Qué fija |
 |---|---|---|
 | `test_invariants.py` | 193 | las leyes de la morfología como propiedad general |
-| `test_cli_main.py` | 84 | el parser: flags, patrones, guardado y códigos de salida, incluidas `--backend`, `--time` y `--compare` |
+| `test_cli_main.py` | 90 | el parser: flags, patrones, guardado y códigos de salida, incluidas `--backend`, `--time` y `--compare`, y que un error de dominio salga con código 2 sin traceback |
 | `test_edge_cases.py` | 35 | entradas degeneradas y los caminos que nadie recorría |
 | `test_segmentation.py` | 8 | `segment_otsu`: el umbral, el puente y su validación |
 | `test_morphology.py` | 47 | el núcleo algorítmico, binario y grayscale |
@@ -40,8 +40,8 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | `test_public_api.py` | 8 | cableado de la superficie pública y versión |
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | las tres `run_*` que no encajan en el molde, con I/O real |
-| `test_preprocessing.py` | 15 | qué hace `apply_clahe`, sus parámetros y su validación |
-| `test_backend_parity.py` | 463 | paridad exacta entre los dos motores, binario y grayscale, incluidos los ocho dtypes enteros; se salta si el nativo no está instalado |
+| `test_preprocessing.py` | 25 | qué hace `apply_clahe`, sus parámetros y su validación, incluida la grilla |
+| `test_backend_parity.py` | 510 | paridad exacta entre los dos motores, binario, grayscale y Zhang-Suen, incluidos los ocho dtypes enteros; se salta si el nativo no está instalado |
 
 ## Qué se verifica de verdad
 

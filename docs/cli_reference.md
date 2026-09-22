@@ -12,10 +12,15 @@ pip install -e .
 vispyx --help
 ```
 
-`vispyx/cli.py` **no tiene** bloque `if __name__ == "__main__":`, por lo que
-`python vispyx/cli.py ...` y `python -m vispyx.cli ...` no ejecutan nada: solo
-importan el módulo. La única forma soportada de invocar el CLI es el comando
-`vispyx` instalado (o llamar `vispyx.cli.main()` desde Python).
+Sin instalar el comando, las dos formas equivalentes son:
+
+```bash
+python -m vispyx --help
+python -m vispyx.cli --help
+```
+
+El nombre del programa está fijo en `vispyx`, así que el uso y los errores dicen
+`vispyx` en los tres casos.
 
 ## Forma del comando
 
@@ -335,9 +340,10 @@ del CI.
 
 ## Errores y códigos de salida
 
-`main()` no tiene `try/except`. Hay dos comportamientos distintos:
+Toda entrada inválida termina con código **2** y una sola línea en `stderr`,
+sin traceback. Hay dos orígenes, y los dos se ven igual:
 
-**Salida 2, mensaje limpio (errores de `argparse`)**
+**Errores de `argparse`**
 
 - método inválido, falta de argumentos, tipo incorrecto (`--clip abc`)
 - `vpx_reconstruct` sin `--mask`:
@@ -345,30 +351,44 @@ del CI.
 - `--backend rust` o `--compare` sin `vispyx-native` instalado
 - `--compare` junto con `--backend`
 
+**Errores de dominio** (`ValueError` o `FileNotFoundError` que lanza el
+paquete). `main()` los atrapa alrededor del despacho y los pasa a
+`parser.error`, así que el mensaje es **exactamente** el de la API de Python:
+
+| Mensaje | Origen |
+|---|---|
+| `No se encontró la imagen en <ruta>` | `read_grayscale`, cuando no hay ningún archivo en la ruta |
+| `No se pudo decodificar la imagen en <ruta>` | `read_grayscale`, cuando el archivo existe pero no es una imagen legible |
+| `--kernel-size debe ser un entero positivo` | `_build_kernel`, con `kernel_size <= 0` |
+| `size must be odd` | `_validate_size` en `kernels.py`, con `--kernel-size` **par**, en cualquiera de las cuatro formas. Falla **antes** de leer la imagen |
+| `iterations must be a positive integer` | `validate_iterations`, con `--iterations 0` o `--max-iterations 0` |
+| `tile_grid_size must be two positive integers` | `apply_clahe`, con `--grid 0` o negativo. Antes de validarlo, OpenCV dividía por cero y el proceso moría con SIGFPE |
+| `marker must be a subset of mask` | `vpx_reconstruct`, marcador fuera de la máscara |
+| `marker and mask must have the same shape` | `vpx_reconstruct`, formas distintas |
+| `VISPYX_BACKEND must be one of: auto, python, rust` | la variable de entorno con un valor que no existe. La flag `--backend` lo ataja antes, con `choices` |
+
+Ejemplo:
+
+```text
+$ vispyx vpx_erode imagen.pgm --iterations 0
+usage: vispyx [-h] ...
+vispyx: error: iterations must be a positive integer
+$ echo $?
+2
+```
+
 **Salida 1, mensaje limpio (un solo caso)**
 
 - `los dos backends divergieron`, tras la tabla de `--compare`. No es un error
   de uso sino un bug del paquete, y por eso sale con código distinto de cero:
   para que un script lo note
 
-**Salida 1, traceback crudo (excepciones no capturadas)**
+**Traceback crudo: solo los bugs**
 
-| Error | Origen |
-|---|---|
-| `FileNotFoundError: No se encontró la imagen en <ruta>` | `read_grayscale`, cuando no hay ningún archivo en la ruta |
-| `ValueError: No se pudo decodificar la imagen en <ruta>` | `read_grayscale`, cuando el archivo existe pero no es una imagen legible |
-| `ValueError: --kernel-size debe ser un entero positivo` | `_build_kernel`, con `kernel_size <= 0` |
-| `ValueError: size must be odd` | `_validate_size` en `kernels.py`, con `--kernel-size` **par**, en cualquiera de las cuatro formas. Falla al construir el kernel, **antes** de leer la imagen |
-| `ValueError: Forma de kernel no reconocida: <valor>` | `_build_kernel` llamado desde Python con una forma que `argparse` no filtró. Por el CLI es inalcanzable: ahí lo ataja `choices` con salida `2` |
-| `ValueError: iterations must be a positive integer` | `validate_iterations`, con `--iterations 0` o `--max-iterations 0` |
-| `ValueError: marker must be a subset of mask` | `vpx_reconstruct`, marcador fuera de la máscara |
-| `ValueError: marker and mask must have the same shape` | `vpx_reconstruct`, formas distintas |
-| `cv2.error` | OpenCV, p. ej. `--grid 0` en CLAHE |
-
-Resumen: solo los errores de parseo salen amigables. Todo error de dominio sale
-como traceback. Un `VISPYX_BACKEND` con un valor que no existe entra en esa
-segunda categoría (`ValueError: VISPYX_BACKEND must be one of: auto, python,
-rust`); la flag `--backend` sí lo ataja con `choices`, con salida `2`.
+Cualquier otra excepción —`TypeError`, `RuntimeError`, un `cv2.error`— sale
+como traceback completo, a propósito. No viene de una entrada mal escrita sino
+de un defecto del paquete, y esconderla detrás de una línea amable haría más
+difícil reportarla.
 
 ## Ejemplos
 

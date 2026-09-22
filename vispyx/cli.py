@@ -315,7 +315,11 @@ def _compare_backends(parser, args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="CLI de procesamiento de imágenes con vispyx")
+    # `prog` fijo: con `python -m vispyx` argparse diria "__main__.py" en el uso
+    # y en cada error.
+    parser = argparse.ArgumentParser(
+        prog="vispyx", description="CLI de procesamiento de imágenes con vispyx"
+    )
     parser.add_argument(
         "method",
         choices=METHODS,
@@ -383,15 +387,22 @@ def main():
             "esta instalado. Instalalo con `cd native && maturin develop --release`"
         )
 
-    if args.compare:
-        result = _compare_backends(parser, args)
-    elif args.backend:
-        with _backend.override(args.backend):
+    try:
+        if args.compare:
+            result = _compare_backends(parser, args)
+        elif args.backend:
+            with _backend.override(args.backend):
+                result, transcurrido = _timed(_dispatch, parser, args)
+                motor = _backend.name()
+        else:
             result, transcurrido = _timed(_dispatch, parser, args)
             motor = _backend.name()
-    else:
-        result, transcurrido = _timed(_dispatch, parser, args)
-        motor = _backend.name()
+    except (ValueError, FileNotFoundError) as error:
+        # Los errores de dominio son entrada invalida del usuario: un
+        # `--iterations 0` no merece un traceback. El mensaje es el mismo que
+        # lanza la API de Python, que es contrato publico. Cualquier otra
+        # excepcion es un bug y sigue saliendo con su traceback completo.
+        parser.error(str(error))
 
     if args.time and not args.compare:
         print("tiempo ({}): {:.4f}s".format(motor, transcurrido))
@@ -431,3 +442,7 @@ def main():
 
     if not args.output:
         print("Imagen procesada. No se guardó.")
+
+
+if __name__ == "__main__":
+    main()

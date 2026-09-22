@@ -14,6 +14,7 @@ donde el reflejo de `np.pad` se pliega más de una vez.
 """
 
 import os
+import sys
 
 import numpy as np
 import pytest
@@ -453,3 +454,108 @@ def test_skeletonize_validation_errors_still_come_from_python():
             vpx_skeletonize(np.zeros((0, 3), dtype=np.uint8))
         with pytest.raises(ValueError, match="iterations must be a positive integer"):
             vpx_skeletonize(thick_shapes(), max_iterations=0)
+
+
+# --- el GIL se libera durante el calculo ---
+#
+# Sin `py.detach`, una llamada nativa retiene el GIL de principio a fin y ningun
+# otro hilo de Python avanza mientras dura. Estos tests miden justo eso: cuanto
+# avanza el hilo principal mientras el nativo trabaja en otro hilo.
+
+
+def _disco(lado):
+    yy, xx = np.mgrid[:lado, :lado]
+    radio = lado * 0.45
+    return (((yy - lado / 2) ** 2 + (xx - lado / 2) ** 2) < radio**2).astype(np.uint8) * 255
+
+
+def _vueltas_mientras_corre(operacion):
+    """Cuenta vueltas de un bucle Python mientras ``operacion`` corre en otro hilo.
+
+    El hilo avisa justo antes de entrar al nativo. Si el GIL no se suelta, el
+    hilo principal no vuelve a correr hasta que la llamada termina, y el
+    contador se queda en un punado de vueltas.
+    """
+    import threading
+
+    empezo = threading.Event()
+    termino = threading.Event()
+
+    def trabajo():
+        empezo.set()
+        operacion()
+        termino.set()
+
+    # Al volver del nativo, Python le cede el GIL al hilo principal por un
+    # intervalo completo (5 ms por defecto) antes de que `termino.set()` corra.
+    # Esa cola daba ~80 000 vueltas aun sin soltar el GIL. Con el intervalo en
+    # 10 us la cola desaparece y solo cuenta lo que pasa durante la llamada.
+    intervalo = sys.getswitchinterval()
+    sys.setswitchinterval(1e-5)
+    hilo = threading.Thread(target=trabajo)
+    try:
+        with _backend.override("rust"):
+            hilo.start()
+            empezo.wait()
+            vueltas = 0
+            while not termino.is_set():
+                vueltas += 1
+            hilo.join()
+    finally:
+        sys.setswitchinterval(intervalo)
+    return vueltas
+
+
+def _gil_cases():
+    """Llamadas directas al nativo, con la entrada ya preparada.
+
+    Directas y no por `vpx_erode` a proposito: la primera version construia la
+    imagen y validaba dentro de la operacion, el hilo principal avanzaba durante
+    ese trabajo de Python, y el test sobrevivia a quitar `py.detach` del todo.
+    """
+    nativo = _backend.native()
+    binaria = (noise((1024, 1024), seed=131) > 0).astype(np.uint8)
+    grises = gray_noise((1024, 1024), seed=137)
+    disco = (_disco(640) > 0).astype(np.uint8)
+    kernel = kernel_square(3)
+    return {
+        "binary_op": lambda: nativo.binary_op(binaria, kernel, 20, "erode"),
+        "grayscale_op": lambda: nativo.grayscale_op(grises, kernel, 20, "erode"),
+        "zhang_suen": lambda: nativo.zhang_suen(disco, None),
+    }
+
+
+GIL_CASE_IDS = ("binary_op", "grayscale_op", "zhang_suen")
+
+
+@pytest.mark.parametrize("caso", GIL_CASE_IDS)
+def test_other_python_threads_run_during_a_native_call(caso):
+    """Medido en esta maquina: sin `py.detach`, menos de 4 000 vueltas; con el,
+    mas de 900 000. El umbral queda a 25x de lo primero y 9x de lo segundo."""
+    with _backend.override("rust"):
+        operacion = _gil_cases()[caso]
+    assert _vueltas_mientras_corre(operacion) > 100_000
+
+
+def test_threads_give_the_same_results_as_serial():
+    """Soltar el GIL no puede cambiar ni un pixel, ni mezclar imagenes."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    imagenes = [noise((64, 57), seed=200 + i) for i in range(8)]
+    grises = [gray_noise((64, 57), seed=300 + i, dtype=np.uint16) for i in range(8)]
+
+    def las_tres(indice):
+        return (
+            vpx_erode(imagenes[indice], kernel_cross(7), 2),
+            gray_dilate(grises[indice], np.array([[1, 0, 0]], dtype=np.uint8), 2),
+            vpx_skeletonize(imagenes[indice]),
+        )
+
+    with _backend.override("rust"):
+        en_serie = [las_tres(i) for i in range(8)]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            en_hilos = list(pool.map(las_tres, range(8)))
+
+    for serie, hilos in zip(en_serie, en_hilos):
+        for esperado, obtenido in zip(serie, hilos):
+            assert_identical(esperado, obtenido)
