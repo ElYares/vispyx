@@ -104,8 +104,9 @@ ese test falla. Es la razón por la que la rama
 inalcanzable desde `argparse`: no es código muerto, es la red para ese error de
 programación, y la parametrización la ejercita.
 
-Fuera de alcance a propósito: `--show`, que fuerza el backend `TkAgg` y necesita
-display.
+Fuera de alcance a propósito: abrir la ventana de `--show`, que necesita
+display. Lo que sí se prueba es que el CLI **sin** `--show` corra en un proceso
+sin `DISPLAY` ni `WAYLAND_DISPLAY`, y que `--show` sin display salga con código 2.
 
 **El tamaño del kernel decide qué puede probar un test de forma.** Las cuatro
 formas coinciden entre sí para radios chicos: en `3` la cruz, el diamante y el
@@ -136,8 +137,7 @@ Llegar ahí resolvió una duplicación que la propia medición había delatado:
 con **cero ejecuciones** mientras la de `utils.py` sí estaba cubierta. Ahora hay
 una sola, y `figsize` — lo único que la copia aportaba — es un parámetro.
 
-`--show` sigue sin poder ejercitarse de verdad: fuerza el backend `TkAgg` al
-importar el módulo y necesita display. Lo que sí se fija es que **despache a esa
+`--show` sigue sin poder ejercitarse de verdad: necesita display. Lo que sí se fija es que **despache a esa
 única implementación**, con un test que reemplaza `show_image` y comprueba los
 argumentos, más otro que afirma que `cli.show_image is utils.show_image` para
 que la copia no vuelva.

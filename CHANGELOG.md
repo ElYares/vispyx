@@ -16,6 +16,10 @@
   (OIDC) y sin tokens. Verifica que el tag coincida con la version del crate.
   Falta registrar el publisher en pypi.org: es una accion de la cuenta, fuera
   del repo
+- **fix: el CLI no arrancaba en una maquina sin display**, aunque no se usara
+  `--show`. `cli.py` forzaba `matplotlib.use("TkAgg")` al importarse, y sin
+  display eso lanza `ImportError`. Lo encontro el primer run del CI. Ahora el
+  backend se cambia solo con `--show`, y sin display sale con codigo 2
 - con `VISPYX_BACKEND=rust`, `test_backend_parity.py` ya no puede saltarse: si
   el nativo falta, la coleccion falla. Sin eso, un nativo mal instalado dejaba
   la suite en verde sin tocar Rust

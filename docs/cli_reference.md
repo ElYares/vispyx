@@ -323,9 +323,15 @@ if args.output:
 - sin `--output` imprime `Imagen procesada. No se guardó.`
 - `--output` y `--show` son combinables: primero guarda, después muestra
 
-`--show` usa matplotlib con backend `TkAgg`, forzado a nivel de módulo
-(`matplotlib.use("TkAgg")` al importar `cli.py`). En un entorno sin display ni
-Tkinter, `--show` falla.
+`--show` cambia matplotlib al backend `TkAgg` justo antes de abrir la ventana, y
+solo entonces. Sin display termina con código **2**:
+`vispyx: error: --show necesita un display: ...`. Sin `--show`, el CLI no toca el
+backend y corre en una máquina sin display —un servidor, el CI—.
+
+Hasta la 0.4.0 el backend se forzaba al importar `cli.py`, y sin display
+`matplotlib.use("TkAgg")` lanza `ImportError`: el comando entero moría al
+arrancar, aunque solo se quisiera guardar con `-o`. Lo encontró el primer run
+del CI.
 
 ## Errores y códigos de salida
 
