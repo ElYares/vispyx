@@ -2,27 +2,25 @@
 
 ## No publicado
 
-### CLI: errores de dominio sin traceback
+### El backend nativo suelta el GIL
 
-**Toda entrada invalida sale con codigo 2 y una linea en stderr.** Antes, solo
-los errores de `argparse` salian limpios: un `--iterations 0`, un
-`--kernel-size 4` o una ruta inexistente mostraban el traceback completo.
+**Varias imagenes en hilos corren en paralelo: 2.9x con 4 hilos**, contra 1.1x
+antes. `binary_op`, `grayscale_op` y `zhang_suen` sueltan el GIL durante el
+calculo con `py.detach`; solo lo retienen para copiar la entrada fuera de NumPy
+y construir la salida. Resultados identicos, en serie o en hilos.
 
-- `main()` atrapa `ValueError` y `FileNotFoundError` alrededor del despacho y
-  los pasa a `parser.error`. El mensaje es exactamente el de la API de Python,
-  que sigue siendo contrato publico
-- cualquier otra excepcion sigue saliendo como traceback: es un bug, no una
-  entrada mal escrita, y esconderlo haria mas dificil reportarlo
-- `python -m vispyx` y `python -m vispyx.cli` ahora corren el CLI. El nombre del
-  programa esta fijo en `vispyx`, asi que el uso y los errores no dicen
-  `__main__.py`
-- **fix: `--grid 0` mataba el proceso.** OpenCV dividia por el tamano de la
-  celda y el proceso moria con SIGFPE y core dump, sin traceback ni mensaje.
-  `apply_clahe` valida ahora `tile_grid_size` y lanza
-  `tile_grid_size must be two positive integers`. La documentacion decia que
-  salia como `cv2.error`; no era cierto
-- los tests del CLI que esperaban `ValueError` desde `main()` pasan a esperar
-  codigo 2 con el mensaje literal en stderr. Suite de 948 a 964 tests
+- para un dataset basta un `ThreadPoolExecutor`: sin multiprocessing ni copiar
+  imagenes entre procesos. Una sola imagen sigue usando un solo nucleo
+- 4 tests nuevos. Tres miden cuanto avanza el hilo principal mientras el nativo
+  corre en otro hilo, uno por funcion; el cuarto exige que 8 imagenes en hilos
+  den lo mismo que en serie
+- **el primer intento de esos tests sobrevivio a quitar `py.detach`**:
+  construian la imagen dentro de la operacion y el hilo principal avanzaba
+  durante ese trabajo de Python. Corregido eso quedaba una cola de ~80 000
+  vueltas, el intervalo de 5 ms que Python le cede al hilo principal al volver
+  del nativo. Con `sys.setswitchinterval(1e-5)` desaparece: sin soltar el GIL,
+  menos de 4 000 vueltas; soltandolo, mas de 900 000
+- `native/bench.py` termina con la medicion de hilos
 
 ### Zhang-Suen
 

@@ -6,7 +6,9 @@ No es un test: no falla, solo mide. La paridad la garantiza
 ``test/test_backend_parity.py``.
 """
 
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
@@ -96,6 +98,44 @@ def main():
             f"{python_seconds:>9.4f}s {rust_seconds:>9.4f}s "
             f"{python_seconds / rust_seconds:>8.0f}x"
         )
+
+    bench_threads()
+
+
+def bench_threads():
+    """Varias imagenes en hilos contra las mismas en serie, solo con Rust.
+
+    Mide que el nativo suelte el GIL. Si no lo soltara, los hilos correrian uno
+    detras de otro y el speedup seria ~1x.
+    """
+    workers = min(4, os.cpu_count() or 1)
+    rng = np.random.default_rng(1)
+    images = [(rng.random((1024, 1024)) > 0.5).astype(np.uint8) * 255 for _ in range(workers)]
+    kernel = kernel_square(3)
+
+    def one(image):
+        return vpx_erode(image, kernel, 10)
+
+    print()
+    print(f"{'hilos (rust)':<20} {'imagenes':>9} {'serie':>10} {'hilos':>10} {'speedup':>9}")
+    print("-" * 62)
+
+    with _backend.override("rust"):
+        start = time.perf_counter()
+        serial = [one(image) for image in images]
+        serial_seconds = time.perf_counter() - start
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            start = time.perf_counter()
+            threaded = list(pool.map(one, images))
+            threaded_seconds = time.perf_counter() - start
+
+    assert all(np.array_equal(a, b) for a, b in zip(serial, threaded))
+    print(
+        f"{'vpx_erode 3x3 x10':<20} {workers:>4}x1024 "
+        f"{serial_seconds:>9.4f}s {threaded_seconds:>9.4f}s "
+        f"{serial_seconds / threaded_seconds:>8.1f}x"
+    )
 
 
 if __name__ == "__main__":
