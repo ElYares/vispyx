@@ -67,6 +67,21 @@ def _correr(monkeypatch, argumentos):
     cli.main()
 
 
+def _falla_con_codigo_2(monkeypatch, capsys, argumentos, mensaje):
+    """Un error de dominio sale como error de argparse, no como traceback.
+
+    El mensaje es el mismo que lanza la API de Python: se verifica literal en
+    stderr, con el prefijo ``vispyx: error:`` que pone ``parser.error``.
+    """
+    with pytest.raises(SystemExit) as salida:
+        _correr(monkeypatch, argumentos)
+
+    assert salida.value.code == 2
+    err = capsys.readouterr().err
+    assert "vispyx: error: " + mensaje in err
+    assert "Traceback" not in err
+
+
 def _argumentos(metodo, imagen, mascara, salida):
     """Los argumentos minimos para que un metodo corra."""
     if metodo == "vpx_reconstruct":
@@ -382,25 +397,34 @@ def test_metodo_desconocido_sale_con_codigo_2(imagen, monkeypatch, capsys):
     assert "invalid choice" in capsys.readouterr().err
 
 
-def test_kernel_par_es_rechazado(imagen, monkeypatch):
+def test_kernel_par_es_rechazado(imagen, monkeypatch, capsys):
     """Desde ``--kernel-shape`` la paridad la valida ``kernels.py``.
 
     Antes el error salia de ``validate_kernel``, ya dentro de la operacion y
     despues de leer la imagen: ``kernel dimensions must be odd``. Ahora
     ``_build_kernel`` delega en los generadores y falla antes de leer nada.
     """
-    with pytest.raises(ValueError, match="size must be odd"):
-        _correr(monkeypatch, ["vpx_erode", imagen, "--kernel-size", "4"])
+    _falla_con_codigo_2(
+        monkeypatch, capsys, ["vpx_erode", imagen, "--kernel-size", "4"], "size must be odd"
+    )
 
 
-def test_kernel_size_no_positivo_es_rechazado(imagen, monkeypatch):
-    with pytest.raises(ValueError, match="--kernel-size debe ser un entero positivo"):
-        _correr(monkeypatch, ["vpx_erode", imagen, "--kernel-size", "0"])
+def test_kernel_size_no_positivo_es_rechazado(imagen, monkeypatch, capsys):
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["vpx_erode", imagen, "--kernel-size", "0"],
+        "--kernel-size debe ser un entero positivo",
+    )
 
 
-def test_iterations_cero_es_rechazado(imagen, monkeypatch):
-    with pytest.raises(ValueError, match="iterations must be a positive integer"):
-        _correr(monkeypatch, ["vpx_erode", imagen, "--iterations", "0"])
+def test_iterations_cero_es_rechazado(imagen, monkeypatch, capsys):
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["vpx_erode", imagen, "--iterations", "0"],
+        "iterations must be a positive integer",
+    )
 
 
 def test_kernel_es_alias_de_kernel_size(imagen, tmp_path, monkeypatch):
@@ -417,18 +441,23 @@ def test_kernel_es_alias_de_kernel_size(imagen, tmp_path, monkeypatch):
     )
 
 
-def test_imagen_inexistente_falla_con_el_error_del_paquete(tmp_path, monkeypatch):
-    """El CLI usa ``read_grayscale``, asi que el error es el mismo que en Python."""
-    with pytest.raises(FileNotFoundError, match="No se encontró la imagen"):
-        _correr(monkeypatch, ["clahe", str(tmp_path / "no-existe.pgm")])
+def test_imagen_inexistente_falla_con_el_error_del_paquete(tmp_path, monkeypatch, capsys):
+    """El CLI usa ``read_grayscale``, asi que el mensaje es el mismo que en Python."""
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["clahe", str(tmp_path / "no-existe.pgm")],
+        "No se encontró la imagen",
+    )
 
 
-def test_imagen_ilegible_se_distingue_de_inexistente(tmp_path, monkeypatch):
+def test_imagen_ilegible_se_distingue_de_inexistente(tmp_path, monkeypatch, capsys):
     ruta = tmp_path / "basura.pgm"
     ruta.write_text("esto no es una imagen")
 
-    with pytest.raises(ValueError, match="No se pudo decodificar la imagen"):
-        _correr(monkeypatch, ["clahe", str(ruta)])
+    _falla_con_codigo_2(
+        monkeypatch, capsys, ["clahe", str(ruta)], "No se pudo decodificar la imagen"
+    )
 
 
 def test_clahe_respeta_clip_y_grid(imagen, tmp_path, monkeypatch):
@@ -570,13 +599,14 @@ def test_la_forma_llega_a_los_gray(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("forma", ["square", "cross", "diamond", "disk"])
-def test_ninguna_forma_acepta_un_tamano_par(forma, imagen, monkeypatch):
+def test_ninguna_forma_acepta_un_tamano_par(forma, imagen, monkeypatch, capsys):
     """El disco tambien: sin la validacion, size=4 daria el mismo disco que 5."""
-    with pytest.raises(ValueError, match="size must be odd"):
-        _correr(
-            monkeypatch,
-            ["vpx_erode", imagen, "--kernel-size", "4", "--kernel-shape", forma],
-        )
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["vpx_erode", imagen, "--kernel-size", "4", "--kernel-shape", forma],
+        "size must be odd",
+    )
 
 
 def test_forma_desconocida_sale_con_codigo_2(imagen, monkeypatch, capsys):
@@ -603,7 +633,7 @@ def test_run_vpx_hitmiss_rechaza_un_patron_que_el_parser_no_filtro(imagen):
         cli.run_vpx_hitmiss(imagen, "espiral")
 
 
-def test_un_metodo_en_la_lista_sin_rama_de_despacho_falla(imagen, monkeypatch):
+def test_un_metodo_en_la_lista_sin_rama_de_despacho_falla(imagen, monkeypatch, capsys):
     """La red que `HU-003` estuvo a punto de borrar por "codigo muerto".
 
     La rama ``else`` de ``main()`` es inalcanzable desde ``argparse``, pero no
@@ -614,8 +644,9 @@ def test_un_metodo_en_la_lista_sin_rama_de_despacho_falla(imagen, monkeypatch):
     """
     monkeypatch.setattr(cli, "METHODS", cli.METHODS + ["vpx_inventado"])
 
-    with pytest.raises(ValueError, match="Método no reconocido: vpx_inventado"):
-        _correr(monkeypatch, ["vpx_inventado", imagen])
+    _falla_con_codigo_2(
+        monkeypatch, capsys, ["vpx_inventado", imagen], "Método no reconocido: vpx_inventado"
+    )
 
 
 # --- seleccion de backend, cronometrado y comparacion ---
@@ -761,3 +792,67 @@ def test_compare_denuncia_una_divergencia_y_sale_con_codigo_1(
     capturado = capsys.readouterr()
     assert "resultados identicos: NO, 16 pixeles distintos" in capturado.out
     assert "los dos backends divergieron" in capturado.err
+
+
+# --- errores de dominio sin traceback ---
+
+
+def test_max_iterations_cero_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["vpx_skeletonize", imagen, "--max-iterations", "0"],
+        "iterations must be a positive integer",
+    )
+
+
+def test_un_bug_sigue_saliendo_con_traceback(imagen, monkeypatch):
+    """Solo se convierten los errores de entrada. Esconder un bug no es el objetivo."""
+
+    def roto(parser, args):
+        raise RuntimeError("bug interno")
+
+    monkeypatch.setattr(cli, "_dispatch", roto)
+    with pytest.raises(RuntimeError, match="bug interno"):
+        _correr(monkeypatch, ["vpx_erode", imagen])
+
+
+@pytest.mark.parametrize("modulo", ["vispyx.cli", "vispyx"])
+def test_python_m_imprime_la_ayuda(modulo):
+    """Sin la guarda ``__main__``, ``python -m vispyx.cli`` no corria nada."""
+    import subprocess
+
+    salida = subprocess.run(
+        [sys.executable, "-m", modulo, "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert salida.returncode == 0
+    assert "usage: " in salida.stdout
+    assert "vpx_erode" in salida.stdout
+
+
+def test_error_de_dominio_desde_un_proceso_real(imagen):
+    """El camino completo, como lo ve un usuario en la terminal."""
+    import subprocess
+
+    salida = subprocess.run(
+        [sys.executable, "-m", "vispyx", "vpx_erode", imagen, "--iterations", "0"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert salida.returncode == 2
+    assert "vispyx: error: iterations must be a positive integer" in salida.stderr
+    assert "Traceback" not in salida.stderr
+
+
+def test_grid_cero_sale_con_codigo_2_en_vez_de_matar_el_proceso(imagen, monkeypatch, capsys):
+    """Antes OpenCV dividia por cero y el proceso moria con SIGFPE."""
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["clahe", imagen, "--grid", "0"],
+        "tile_grid_size must be two positive integers",
+    )
