@@ -94,7 +94,10 @@ jobs:
       - name: el wheel se instala sin compilador
         shell: bash
         run: |
-          python -m pip install vispyx-native --no-index --find-links native/dist --force-reinstall
+          # numpy viene de PyPI; el wheel, solo de native/dist y sin dependencias:
+          # si no hubiera un wheel compatible, pip no podria caer al sdist.
+          python -m pip install numpy
+          python -m pip install vispyx-native --no-index --no-deps --find-links native/dist --force-reinstall
           cd "$RUNNER_TEMP"
           python -c "import vispyx_native; print(vispyx_native.__version__, vispyx_native.supported_ops())"
       - uses: actions/upload-artifact@v4
