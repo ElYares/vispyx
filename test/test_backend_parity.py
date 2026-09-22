@@ -445,3 +445,83 @@ def test_skeletonize_validation_errors_still_come_from_python():
             vpx_skeletonize(np.zeros((0, 3), dtype=np.uint8))
         with pytest.raises(ValueError, match="iterations must be a positive integer"):
             vpx_skeletonize(thick_shapes(), max_iterations=0)
+
+
+# --- van Herk / Gil-Werman: kernels rectangulares solidos ---
+#
+# El nativo desvia los kernels todo-unos a una ruta separable: una pasada por
+# filas y otra por columnas, con costo independiente del tamano. Solo desde
+# cierto tamano (25 celdas en grises, 49 en binario), asi que cada kernel de
+# esta lista esta elegido para cruzar el umbral que le toca, con lados
+# distintos para que un eje traspuesto no pase desapercibido.
+#
+# Un kernel solido no distingue reflejo de repeticion de borde (ver KERNELS),
+# asi que aqui el borde no lo discrimina la forma: lo discrimina la comparacion
+# exacta contra el bucle de Python sobre imagenes con foreground en el margen.
+
+RECT_KERNELS_GRAY = ((5, 5), (9, 3), (3, 9), (1, 25), (25, 1), (7, 7), (15, 15), (31, 5))
+RECT_KERNELS_BINARY = ((7, 7), (9, 7), (7, 9), (1, 49), (49, 1), (15, 15), (31, 5))
+
+
+def _rect_id(shape):
+    return "{}x{}".format(*shape)
+
+
+@pytest.mark.parametrize("shape", RECT_KERNELS_GRAY, ids=_rect_id)
+@pytest.mark.parametrize("operation", (gray_erode, gray_dilate), ids=lambda op: op.__name__)
+@pytest.mark.parametrize("iterations", (1, 2))
+def test_solid_rect_grayscale_matches(shape, operation, iterations):
+    image = gray_noise((23, 19), seed=151, dtype=np.uint16)
+    kernel = np.ones(shape, dtype=np.uint8)
+    assert_identical(*both_backends(operation, image, kernel, iterations))
+
+
+@pytest.mark.parametrize("shape", RECT_KERNELS_BINARY, ids=_rect_id)
+@pytest.mark.parametrize("operation", (vpx_erode, vpx_dilate), ids=lambda op: op.__name__)
+@pytest.mark.parametrize("density", (0.3, 0.9))
+def test_solid_rect_binary_matches(shape, operation, density):
+    image = noise((23, 19), seed=157, density=density)
+    kernel = np.ones(shape, dtype=np.uint8)
+    assert_identical(*both_backends(operation, image, kernel, 2))
+
+
+@pytest.mark.parametrize(
+    "image_shape",
+    ((1, 1), (1, 9), (9, 1), (2, 2), (3, 4), (6, 5)),
+    ids=("1x1", "1x9", "9x1", "2x2", "3x4", "6x5"),
+)
+@pytest.mark.parametrize("shape", ((7, 7), (15, 15), (1, 49), (31, 5)), ids=_rect_id)
+def test_solid_rect_larger_than_the_image_matches(image_shape, shape):
+    """El reflejo se pliega varias veces, y van Herk lo aplica por separado en cada eje."""
+    kernel = np.ones(shape, dtype=np.uint8)
+    grises = gray_noise(image_shape, seed=163)
+    binaria = noise(image_shape, seed=167)
+    assert_identical(*both_backends(gray_erode, grises, kernel, 1))
+    assert_identical(*both_backends(gray_dilate, grises, kernel, 1))
+    assert_identical(*both_backends(vpx_erode, binaria, kernel, 1))
+    assert_identical(*both_backends(vpx_dilate, binaria, kernel, 1))
+
+
+@pytest.mark.parametrize("column", (0, 1, 2, -3, -2, -1))
+@pytest.mark.parametrize("shape", ((7, 7), (9, 7), (1, 49)), ids=_rect_id)
+def test_solid_rect_border_stripes_match(column, shape):
+    """Una franja pegada a cada borde y una fila, en grises con valores distintos."""
+    image = np.zeros((17, 17), dtype=np.uint8)
+    image[:, column] = 200
+    image[5, :] = 90
+    image[0, 3] = 250
+    kernel = np.ones(shape, dtype=np.uint8)
+    assert_identical(*both_backends(gray_erode, image, kernel, 1))
+    assert_identical(*both_backends(gray_dilate, image, kernel, 1))
+    assert_identical(*both_backends(vpx_dilate, image, kernel.T, 1))
+
+
+@pytest.mark.parametrize("operation", COMPOSED_OPERATIONS[:2] + GRAYSCALE_OPERATIONS[2:4],
+                         ids=lambda op: op.__name__)
+def test_solid_rect_composed_operations_match(operation):
+    """Las compuestas heredan la ruta; open/close encadenan erosion y dilatacion."""
+    if operation.__name__.startswith("gray_"):
+        image = gray_noise((20, 22), seed=173)
+    else:
+        image = noise((20, 22), seed=173, density=0.7)
+    assert_identical(*both_backends(operation, image, np.ones((7, 9), dtype=np.uint8), 2))
