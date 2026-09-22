@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 import pytest
 
-from vispyx import cli
+from vispyx import __version__, _backend, cli
 from vispyx import vpx_blackhat, vpx_boundary, vpx_tophat
 from vispyx.cli import METHODS, PATTERN_NAMES
 from vispyx.kernels import kernel_cross, kernel_diamond, kernel_disk, kernel_square
@@ -65,6 +65,21 @@ def mascara(tmp_path):
 def _correr(monkeypatch, argumentos):
     monkeypatch.setattr(sys, "argv", ["vispyx"] + argumentos)
     cli.main()
+
+
+def _falla_con_codigo_2(monkeypatch, capsys, argumentos, mensaje):
+    """Un error de dominio sale como error de argparse, no como traceback.
+
+    El mensaje es el mismo que lanza la API de Python: se verifica literal en
+    stderr, con el prefijo ``vispyx: error:`` que pone ``parser.error``.
+    """
+    with pytest.raises(SystemExit) as salida:
+        _correr(monkeypatch, argumentos)
+
+    assert salida.value.code == 2
+    err = capsys.readouterr().err
+    assert "vispyx: error: " + mensaje in err
+    assert "Traceback" not in err
 
 
 def _argumentos(metodo, imagen, mascara, salida):
@@ -254,16 +269,19 @@ def test_hitmiss_ignora_las_flags_de_kernel(imagen_con_esquinas, tmp_path, monke
 def test_show_llama_al_unico_show_image_del_paquete(imagen, monkeypatch):
     """``--show`` era el unico camino del CLI sin cubrir.
 
-    No se puede ejercitar de verdad: `cli.py` fuerza el backend `TkAgg` al
-    importar y hace falta display. Lo que si se puede fijar es que despache al
-    `show_image` de `utils.py` — antes `cli.py` tenia **su propia copia**, que
-    la cobertura mostraba con cero ejecuciones.
+    No se puede ejercitar de verdad: hace falta display. Lo que si se puede
+    fijar es que cambie a un backend interactivo y despache al `show_image` de
+    `utils.py` — antes `cli.py` tenia **su propia copia**, que la cobertura
+    mostraba con cero ejecuciones.
     """
     llamadas = []
+    backends = []
     monkeypatch.setattr(cli, "show_image", lambda img, **kw: llamadas.append((img, kw)))
+    monkeypatch.setattr(cli.matplotlib, "use", backends.append)
 
     _correr(monkeypatch, ["vpx_erode", imagen, "--show"])
 
+    assert backends == ["TkAgg"]
     assert len(llamadas) == 1
     img, kw = llamadas[0]
     assert kw == {"title": "vpx_erode", "figsize": (8, 6)}
@@ -382,25 +400,34 @@ def test_metodo_desconocido_sale_con_codigo_2(imagen, monkeypatch, capsys):
     assert "invalid choice" in capsys.readouterr().err
 
 
-def test_kernel_par_es_rechazado(imagen, monkeypatch):
+def test_kernel_par_es_rechazado(imagen, monkeypatch, capsys):
     """Desde ``--kernel-shape`` la paridad la valida ``kernels.py``.
 
     Antes el error salia de ``validate_kernel``, ya dentro de la operacion y
     despues de leer la imagen: ``kernel dimensions must be odd``. Ahora
     ``_build_kernel`` delega en los generadores y falla antes de leer nada.
     """
-    with pytest.raises(ValueError, match="size must be odd"):
-        _correr(monkeypatch, ["vpx_erode", imagen, "--kernel-size", "4"])
+    _falla_con_codigo_2(
+        monkeypatch, capsys, ["vpx_erode", imagen, "--kernel-size", "4"], "size must be odd"
+    )
 
 
-def test_kernel_size_no_positivo_es_rechazado(imagen, monkeypatch):
-    with pytest.raises(ValueError, match="--kernel-size debe ser un entero positivo"):
-        _correr(monkeypatch, ["vpx_erode", imagen, "--kernel-size", "0"])
+def test_kernel_size_no_positivo_es_rechazado(imagen, monkeypatch, capsys):
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["vpx_erode", imagen, "--kernel-size", "0"],
+        "--kernel-size debe ser un entero positivo",
+    )
 
 
-def test_iterations_cero_es_rechazado(imagen, monkeypatch):
-    with pytest.raises(ValueError, match="iterations must be a positive integer"):
-        _correr(monkeypatch, ["vpx_erode", imagen, "--iterations", "0"])
+def test_iterations_cero_es_rechazado(imagen, monkeypatch, capsys):
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["vpx_erode", imagen, "--iterations", "0"],
+        "iterations must be a positive integer",
+    )
 
 
 def test_kernel_es_alias_de_kernel_size(imagen, tmp_path, monkeypatch):
@@ -417,18 +444,23 @@ def test_kernel_es_alias_de_kernel_size(imagen, tmp_path, monkeypatch):
     )
 
 
-def test_imagen_inexistente_falla_con_el_error_del_paquete(tmp_path, monkeypatch):
-    """El CLI usa ``read_grayscale``, asi que el error es el mismo que en Python."""
-    with pytest.raises(FileNotFoundError, match="No se encontró la imagen"):
-        _correr(monkeypatch, ["clahe", str(tmp_path / "no-existe.pgm")])
+def test_imagen_inexistente_falla_con_el_error_del_paquete(tmp_path, monkeypatch, capsys):
+    """El CLI usa ``read_grayscale``, asi que el mensaje es el mismo que en Python."""
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["clahe", str(tmp_path / "no-existe.pgm")],
+        "No se encontró la imagen",
+    )
 
 
-def test_imagen_ilegible_se_distingue_de_inexistente(tmp_path, monkeypatch):
+def test_imagen_ilegible_se_distingue_de_inexistente(tmp_path, monkeypatch, capsys):
     ruta = tmp_path / "basura.pgm"
     ruta.write_text("esto no es una imagen")
 
-    with pytest.raises(ValueError, match="No se pudo decodificar la imagen"):
-        _correr(monkeypatch, ["clahe", str(ruta)])
+    _falla_con_codigo_2(
+        monkeypatch, capsys, ["clahe", str(ruta)], "No se pudo decodificar la imagen"
+    )
 
 
 def test_clahe_respeta_clip_y_grid(imagen, tmp_path, monkeypatch):
@@ -570,13 +602,14 @@ def test_la_forma_llega_a_los_gray(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("forma", ["square", "cross", "diamond", "disk"])
-def test_ninguna_forma_acepta_un_tamano_par(forma, imagen, monkeypatch):
+def test_ninguna_forma_acepta_un_tamano_par(forma, imagen, monkeypatch, capsys):
     """El disco tambien: sin la validacion, size=4 daria el mismo disco que 5."""
-    with pytest.raises(ValueError, match="size must be odd"):
-        _correr(
-            monkeypatch,
-            ["vpx_erode", imagen, "--kernel-size", "4", "--kernel-shape", forma],
-        )
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["vpx_erode", imagen, "--kernel-size", "4", "--kernel-shape", forma],
+        "size must be odd",
+    )
 
 
 def test_forma_desconocida_sale_con_codigo_2(imagen, monkeypatch, capsys):
@@ -603,7 +636,7 @@ def test_run_vpx_hitmiss_rechaza_un_patron_que_el_parser_no_filtro(imagen):
         cli.run_vpx_hitmiss(imagen, "espiral")
 
 
-def test_un_metodo_en_la_lista_sin_rama_de_despacho_falla(imagen, monkeypatch):
+def test_un_metodo_en_la_lista_sin_rama_de_despacho_falla(imagen, monkeypatch, capsys):
     """La red que `HU-003` estuvo a punto de borrar por "codigo muerto".
 
     La rama ``else`` de ``main()`` es inalcanzable desde ``argparse``, pero no
@@ -614,5 +647,271 @@ def test_un_metodo_en_la_lista_sin_rama_de_despacho_falla(imagen, monkeypatch):
     """
     monkeypatch.setattr(cli, "METHODS", cli.METHODS + ["vpx_inventado"])
 
-    with pytest.raises(ValueError, match="Método no reconocido: vpx_inventado"):
-        _correr(monkeypatch, ["vpx_inventado", imagen])
+    _falla_con_codigo_2(
+        monkeypatch, capsys, ["vpx_inventado", imagen], "Método no reconocido: vpx_inventado"
+    )
+
+
+# --- seleccion de backend, cronometrado y comparacion ---
+
+sin_nativo = pytest.mark.skipif(
+    not _backend.available(),
+    reason="el backend nativo es opcional; se instala desde native/",
+)
+
+
+def test_version_reporta_la_version_y_el_backend(monkeypatch, capsys):
+    """`--version` es el unico lugar donde alguien puede ver que motor tiene."""
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["--version"])
+
+    assert fallo.value.code == 0
+    salida = capsys.readouterr().out
+    assert __version__ in salida
+    assert "backend:" in salida
+
+
+@pytest.mark.parametrize("motor", ("auto", "python"))
+def test_backend_corre_y_time_reporta_el_motor(motor, imagen, tmp_path, monkeypatch, capsys):
+    salida = str(tmp_path / "salida.pgm")
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "--backend", motor, "--time", "-o", salida])
+
+    impreso = capsys.readouterr().out
+    assert "tiempo (" in impreso
+    assert f"Imagen guardada en: {salida}" in impreso
+
+
+def test_sin_time_no_se_imprime_ningun_tiempo(imagen, tmp_path, monkeypatch, capsys):
+    salida = str(tmp_path / "salida.pgm")
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "-o", salida])
+
+    assert "tiempo (" not in capsys.readouterr().out
+
+
+@sin_nativo
+def test_backend_rust_usa_el_motor_nativo(imagen, tmp_path, monkeypatch, capsys):
+    salida = str(tmp_path / "salida.pgm")
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "--backend", "rust", "--time", "-o", salida])
+
+    assert "tiempo (rust)" in capsys.readouterr().out
+
+
+@sin_nativo
+def test_backend_rust_y_python_dan_el_mismo_archivo(imagen, tmp_path, monkeypatch):
+    """La promesa del backend nativo, verificada desde la linea de comandos."""
+    rutas = {}
+    for motor in ("python", "rust"):
+        rutas[motor] = str(tmp_path / f"{motor}.pgm")
+        _correr(monkeypatch, ["vpx_open", imagen, "--backend", motor, "-o", rutas[motor]])
+
+    leida = {m: cv2.imread(r, cv2.IMREAD_GRAYSCALE) for m, r in rutas.items()}
+    np.testing.assert_array_equal(leida["rust"], leida["python"])
+
+
+def test_backend_desconocido_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--backend", "cuda"])
+
+    assert fallo.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_backend_rust_sin_el_paquete_instalado_sale_con_codigo_2(
+    imagen, monkeypatch, capsys
+):
+    monkeypatch.setattr(_backend, "available", lambda: False)
+
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--backend", "rust"])
+
+    assert fallo.value.code == 2
+    assert "vispyx-native" in capsys.readouterr().err
+
+
+def test_compare_y_backend_juntos_salen_con_codigo_2(imagen, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--compare", "--backend", "rust"])
+
+    assert fallo.value.code == 2
+    assert "no combina con --backend" in capsys.readouterr().err
+
+
+def test_compare_sin_el_paquete_instalado_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    monkeypatch.setattr(_backend, "available", lambda: False)
+
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--compare"])
+
+    assert fallo.value.code == 2
+    assert "vispyx-native" in capsys.readouterr().err
+
+
+@sin_nativo
+def test_compare_mide_los_dos_y_confirma_que_coinciden(
+    imagen, tmp_path, monkeypatch, capsys
+):
+    salida = str(tmp_path / "salida.pgm")
+
+    _correr(monkeypatch, ["vpx_open", imagen, "--compare", "-o", salida])
+
+    impreso = capsys.readouterr().out
+    assert "python" in impreso
+    assert "rust" in impreso
+    assert "resultados identicos: si" in impreso
+    assert f"Imagen guardada en: {salida}" in impreso
+
+
+@sin_nativo
+def test_compare_no_imprime_el_tiempo_suelto(imagen, tmp_path, monkeypatch, capsys):
+    """`--compare` ya trae su propia tabla; el `--time` de arriba estorbaria."""
+    salida = str(tmp_path / "salida.pgm")
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "--compare", "--time", "-o", salida])
+
+    assert "tiempo (" not in capsys.readouterr().out
+
+
+@sin_nativo
+def test_compare_denuncia_una_divergencia_y_sale_con_codigo_1(
+    imagen, monkeypatch, capsys
+):
+    """Que los dos motores difieran es un bug del paquete, no un error de uso.
+
+    Se fuerza reemplazando el despacho: es la unica forma de alcanzar la rama
+    sin romper el backend nativo a proposito.
+    """
+    respuestas = iter(
+        [np.zeros((4, 4), dtype=np.uint8), np.ones((4, 4), dtype=np.uint8)]
+    )
+    monkeypatch.setattr(cli, "_dispatch", lambda parser, args: next(respuestas))
+
+    with pytest.raises(SystemExit) as fallo:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--compare"])
+
+    assert fallo.value.code == 1
+    capturado = capsys.readouterr()
+    assert "resultados identicos: NO, 16 pixeles distintos" in capturado.out
+    assert "los dos backends divergieron" in capturado.err
+
+
+# --- sin display ---
+
+
+def test_show_sin_display_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    """Sin display, `matplotlib.use("TkAgg")` lanza ImportError."""
+
+    def sin_display(nombre):
+        raise ImportError("Cannot load backend 'TkAgg' ... 'headless' is currently running")
+
+    monkeypatch.setattr(cli.matplotlib, "use", sin_display)
+    monkeypatch.setattr(cli, "show_image", lambda img, **kw: None)
+
+    with pytest.raises(SystemExit) as salida:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--show"])
+
+    assert salida.value.code == 2
+    assert "--show necesita un display" in capsys.readouterr().err
+
+
+def test_sin_show_el_cli_no_toca_el_backend_de_matplotlib(imagen, tmp_path, monkeypatch):
+    backends = []
+    monkeypatch.setattr(cli.matplotlib, "use", backends.append)
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "-o", str(tmp_path / "salida.pgm")])
+
+    assert backends == []
+
+
+def test_el_cli_corre_en_una_maquina_sin_display(imagen, tmp_path):
+    """El bug que encontro el primer run del CI.
+
+    `cli.py` forzaba TkAgg al importarse, y sin display eso lanza ImportError:
+    el comando moria al arrancar aunque solo se quisiera guardar con `-o`. Un
+    proceso aparte sin DISPLAY ni WAYLAND_DISPLAY lo reproduce en cualquier
+    maquina, tenga pantalla o no.
+    """
+    import os
+    import subprocess
+
+    entorno = {
+        clave: valor
+        for clave, valor in os.environ.items()
+        if clave not in ("DISPLAY", "WAYLAND_DISPLAY", "MPLBACKEND")
+    }
+    salida = str(tmp_path / "salida.pgm")
+    proceso = subprocess.run(
+        [sys.executable, "-c", "import sys; from vispyx.cli import main; sys.argv = sys.argv[1:]; main()",
+         "vispyx", "vpx_erode", imagen, "-o", salida],
+        capture_output=True,
+        text=True,
+        env=entorno,
+        timeout=60,
+    )
+    assert proceso.returncode == 0, proceso.stderr
+    assert cv2.imread(salida, cv2.IMREAD_GRAYSCALE) is not None
+
+# --- errores de dominio sin traceback ---
+
+
+def test_max_iterations_cero_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["vpx_skeletonize", imagen, "--max-iterations", "0"],
+        "iterations must be a positive integer",
+    )
+
+
+def test_un_bug_sigue_saliendo_con_traceback(imagen, monkeypatch):
+    """Solo se convierten los errores de entrada. Esconder un bug no es el objetivo."""
+
+    def roto(parser, args):
+        raise RuntimeError("bug interno")
+
+    monkeypatch.setattr(cli, "_dispatch", roto)
+    with pytest.raises(RuntimeError, match="bug interno"):
+        _correr(monkeypatch, ["vpx_erode", imagen])
+
+
+@pytest.mark.parametrize("modulo", ["vispyx.cli", "vispyx"])
+def test_python_m_imprime_la_ayuda(modulo):
+    """Sin la guarda ``__main__``, ``python -m vispyx.cli`` no corria nada."""
+    import subprocess
+
+    salida = subprocess.run(
+        [sys.executable, "-m", modulo, "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert salida.returncode == 0
+    assert "usage: " in salida.stdout
+    assert "vpx_erode" in salida.stdout
+
+
+def test_error_de_dominio_desde_un_proceso_real(imagen):
+    """El camino completo, como lo ve un usuario en la terminal."""
+    import subprocess
+
+    salida = subprocess.run(
+        [sys.executable, "-m", "vispyx", "vpx_erode", imagen, "--iterations", "0"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert salida.returncode == 2
+    assert "vispyx: error: iterations must be a positive integer" in salida.stderr
+    assert "Traceback" not in salida.stderr
+
+
+def test_grid_cero_sale_con_codigo_2_en_vez_de_matar_el_proceso(imagen, monkeypatch, capsys):
+    """Antes OpenCV dividia por cero y el proceso moria con SIGFPE."""
+    _falla_con_codigo_2(
+        monkeypatch,
+        capsys,
+        ["clahe", imagen, "--grid", "0"],
+        "tile_grid_size must be two positive integers",
+    )

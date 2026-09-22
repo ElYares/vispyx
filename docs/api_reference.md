@@ -1,6 +1,6 @@
 # API Reference
 
-Referencia de la API pública de `vispyx` (`0.4.0`). Todo lo listado aquí se
+Referencia de la API pública de `vispyx` (`0.5.0`). Todo lo listado aquí se
 importa directamente desde el paquete raíz:
 
 ```python
@@ -234,6 +234,7 @@ son estables (los tests dependen de ellos literalmente).
 | `image must not be empty` | `validate_binary_image`, `validate_grayscale_image` |
 | `image must contain numeric values` | `validate_grayscale_image` (dtype no numérico) |
 | `image must be uint8 or uint16` | `apply_clahe` (OpenCV solo implementa esos dos) |
+| `tile_grid_size must be two positive integers` | `apply_clahe`. Sin esta validación, un cero mataba el proceso con SIGFPE dentro de OpenCV |
 | `iterations must be a positive integer` | `validate_iterations` |
 | `kernel must be a 2D array` | `validate_kernel` |
 | `kernel must not be empty` | `validate_kernel` |

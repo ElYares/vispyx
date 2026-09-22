@@ -1,5 +1,248 @@
 # Changelog
 
+## 0.5.0
+
+**Un backend opcional en Rust acelera las 19 operaciones, identico bit a bit, y
+el repo tiene CI por primera vez.**
+
+`vispyx-native`, una distribucion aparte en `native/`, corre las operaciones en
+Rust: 469x en `vpx_erode` 3x3, 146x en `gray_erode` 15x15 gracias a van Herk,
+774x en `vpx_skeletonize`. Suelta el GIL, asi que varias imagenes en hilos
+corren en paralelo. Los bucles de Python siguen siendo la referencia: 622 tests
+de paridad exigen el mismo valor y el mismo dtype en cada pixel, y se
+verificaron rompiendo el Rust a proposito. `pip install vispyx` sigue sin
+necesitar compilador; el nativo se elige con `VISPYX_BACKEND` o `--backend`.
+
+Dos bugs de antes, encontrados en el camino: `--grid 0` mataba el proceso con
+SIGFPE dentro de OpenCV, y el CLI no arrancaba en una maquina sin display.
+
+Un cambio de contrato en el CLI: los errores de entrada salen con codigo 2 y una
+linea en stderr, en vez de un traceback. La API de Python no cambia: ningun
+simbolo nuevo, ningun mensaje de error distinto.
+
+Suite de 425 a 1079 tests con el nativo instalado; 436 pasan y 6 se saltan sin
+el. `vispyx-native` queda en `0.1.0`, listo para publicarse con un tag
+`native-v0.1.0` en cuanto se registre el trusted publisher en PyPI.
+
+
+### van Herk / Gil-Werman para kernels rectangulares
+
+**El costo de erosionar o dilatar ya no crece con el kernel.** Un `gray_erode`
+15x15 sobre 256x256 pasa de 29.5 ms a 1.6 ms: de 8x a **146x** contra Python.
+El 31x31 tarda 2.2 ms. Resultados identicos bit a bit.
+
+- los kernels rectangulares solidos (todo unos: `kernel_square` y el default)
+  van por una ruta separable, minimo por filas y despues por columnas, con tres
+  comparaciones por pixel por eje sin importar el tamano
+- dos umbrales, medidos: desde 5x5 en grises y desde 7x7 en binario. El binario
+  tiene salida temprana y sobre ruido el `sweep` gana siempre, pero sobre una
+  mascara realista no: un disco dilatado con 31x31 tarda 145 ms por `sweep` y
+  2.2 ms por van Herk
+- un kernel con cualquier cero sigue por el `sweep`
+- **con un kernel solido, reflejo y repeticion de borde dan lo mismo**: las filas
+  reflejadas ya estan dentro de la ventana. Verificado en 3 000 casos. Cambiar
+  el reflejo por `clamp` dentro de van Herk es una mutacion equivalente, no un
+  hueco de los tests
+- 106 tests de paridad nuevos; cinco mutaciones reales de van Herk, todas mueren
+
+### CI y wheels de vispyx-native
+
+**El repo tiene CI por primera vez**, y `vispyx-native` ya se puede publicar.
+`.github/workflows/ci.yml` corre en cada push y PR:
+
+- la suite sin el nativo (Python 3.9 y 3.13), y con el nativo dos veces:
+  `VISPYX_BACKEND=rust` y `VISPYX_BACKEND=python`. Mas `cargo fmt --check` y
+  `cargo clippy -D warnings`
+- wheels para Linux x86_64, macOS universal2 y Windows x86_64, Python 3.9 a 3.13.
+  Cada wheel se instala con `--no-index` y se importa fuera del repo
+- publicacion en PyPI solo con un tag `native-v*`, con trusted publishing
+  (OIDC) y sin tokens. Verifica que el tag coincida con la version del crate.
+  Falta registrar el publisher en pypi.org: es una accion de la cuenta, fuera
+  del repo
+- **fix: el CLI no arrancaba en una maquina sin display**, aunque no se usara
+  `--show`. `cli.py` forzaba `matplotlib.use("TkAgg")` al importarse, y sin
+  display eso lanza `ImportError`. Lo encontro el primer run del CI. Ahora el
+  backend se cambia solo con `--show`, y sin display sale con codigo 2
+- con `VISPYX_BACKEND=rust`, `test_backend_parity.py` ya no puede saltarse: si
+  el nativo falta, la coleccion falla. Sin eso, un nativo mal instalado dejaba
+  la suite en verde sin tocar Rust
+
+### El backend nativo suelta el GIL
+
+**Varias imagenes en hilos corren en paralelo: 2.9x con 4 hilos**, contra 1.1x
+antes. `binary_op`, `grayscale_op` y `zhang_suen` sueltan el GIL durante el
+calculo con `py.detach`; solo lo retienen para copiar la entrada fuera de NumPy
+y construir la salida. Resultados identicos, en serie o en hilos.
+
+- para un dataset basta un `ThreadPoolExecutor`: sin multiprocessing ni copiar
+  imagenes entre procesos. Una sola imagen sigue usando un solo nucleo
+- 4 tests nuevos. Tres miden cuanto avanza el hilo principal mientras el nativo
+  corre en otro hilo, uno por funcion; el cuarto exige que 8 imagenes en hilos
+  den lo mismo que en serie
+- **el primer intento de esos tests sobrevivio a quitar `py.detach`**:
+  construian la imagen dentro de la operacion y el hilo principal avanzaba
+  durante ese trabajo de Python. Corregido eso quedaba una cola de ~80 000
+  vueltas, el intervalo de 5 ms que Python le cede al hilo principal al volver
+  del nativo. Con `sys.setswitchinterval(1e-5)` desaparece: sin soltar el GIL,
+  menos de 4 000 vueltas; soltandolo, mas de 900 000
+- `native/bench.py` termina con la medicion de hilos
+
+### CLI: errores de dominio sin traceback
+
+**Toda entrada invalida sale con codigo 2 y una linea en stderr.** Antes, solo
+los errores de `argparse` salian limpios: un `--iterations 0`, un
+`--kernel-size 4` o una ruta inexistente mostraban el traceback completo.
+
+- `main()` atrapa `ValueError` y `FileNotFoundError` alrededor del despacho y
+  los pasa a `parser.error`. El mensaje es exactamente el de la API de Python,
+  que sigue siendo contrato publico
+- cualquier otra excepcion sigue saliendo como traceback: es un bug, no una
+  entrada mal escrita, y esconderlo haria mas dificil reportarlo
+- `python -m vispyx` y `python -m vispyx.cli` ahora corren el CLI. El nombre del
+  programa esta fijo en `vispyx`, asi que el uso y los errores no dicen
+  `__main__.py`
+- **fix: `--grid 0` mataba el proceso.** OpenCV dividia por el tamano de la
+  celda y el proceso moria con SIGFPE y core dump, sin traceback ni mensaje.
+  `apply_clahe` valida ahora `tile_grid_size` y lanza
+  `tile_grid_size must be two positive integers`. La documentacion decia que
+  salia como `cv2.error`; no era cierto
+- los tests del CLI que esperaban `ValueError` desde `main()` pasan a esperar
+  codigo 2 con el mensaje literal en stderr. Suite de 948 a 964 tests
+
+### Zhang-Suen
+
+**`vpx_skeletonize` y `vpx_thin` corren en Rust: las 19 operaciones aceleradas.**
+
+Era lo unico pesado que quedaba: Zhang-Suen escala con pixeles x iteraciones, y
+las iteraciones con el grosor de los objetos. Medido sobre un disco:
+**87.8 s -> 0.11 s en 512x512 (774x)**, 744x en 256x256. Resultados identicos bit
+a bit.
+
+- quinta funcion nativa, `zhang_suen`, con motor propio: no reusa `sweep`
+  porque el padding es de **ceros**, hay dos subpasadas y el borrado es diferido
+- **el bucle de convergencia vive en Rust**, no en Python: cruzar la frontera por
+  iteracion costaria una copia del arreglo cada vez
+- el despacho **pregunta** a `supported_ops()` antes de llamar: un
+  `vispyx-native` compilado antes de este cambio cae al bucle de Python en vez
+  de romper
+- 47 tests de paridad nuevos (948 en total con el nativo). Verificados por
+  mutacion: siete mutaciones del Rust, las siete mueren
+- `native/bench.py` mide Zhang-Suen sobre un disco grueso: sobre ruido converge
+  en dos o tres pasadas y no mide nada
+
+### Motor grayscale
+
+**El motor grayscale tambien corre en Rust: 17 de 19 operaciones aceleradas.**
+
+`gray_erode` y `gray_dilate` se suman al backend nativo, y las cinco compuestas
+--`gray_open`, `gray_close`, `gray_gradient`, `gray_tophat`, `gray_blackhat`--
+heredan la aceleracion sin una linea nueva, igual que paso con las binarias.
+Con cuatro funciones nativas en total quedan cubiertas 17 de las 19 operaciones
+del paquete.
+
+Medido: **242x en gray_erode 3x3 sobre 256x256**, 261x en gray_open, 272x en
+uint16. Resultados identicos bit a bit, y el dtype de entrada se conserva.
+
+- ocho dtypes enteros van al nativo: uint8, int8, uint16, int16, uint32, int32,
+  uint64, int64. `int64` no es exotico: es el dtype por defecto de
+  `np.array([[1, 2]])` en Linux
+- **los flotantes se quedan en Python a proposito.** `Ord` en Rust es un orden
+  total y los flotantes no lo tienen; reproducir bit a bit la propagacion de
+  `NaN` de `np.min` no vale el riesgo en un spike. El despacho mira
+  `dtype.kind` y manda float32/float64 al bucle de siempre, sin avisar: mismo
+  resultado, solo mas lento. Dos tests cubren ese camino, incluido uno que
+  rompe el nativo para probar que un float nunca lo toca
+- **el speedup cae con el tamano del kernel, y no es un defecto del port.** En
+  Python el costo es por pixel --domina el overhead de numpy por ventana-- y en
+  Rust es por celda activa. Medido: un `gray_erode` sobre 128x128 tarda lo mismo
+  con kernel 3x3 (0.0564 s) que con 15x15 (0.0549 s), pese a tener 25 veces mas
+  celdas. Por eso el mismo port da 242x en 3x3 y 8x en 15x15
+- `active_offsets` y `parse_op` salen a funciones compartidas: los dos motores
+  del crate usan la misma geometria y el mismo despacho de operacion
+- la suite pasa de 669 a 901 tests con el nativo instalado; sin el, 433 pasan y
+  6 se saltan
+- **dos tests nuevos sobrevivieron a la mutacion y se reforzaron.** Aplicando
+  clamp en vez de reflejo solo en `sweep_gray`, `kernel_diamond(7)` y
+  `kernel_cross(7)` no lo detectaban: son simetricos y contienen el centro, la
+  misma trampa que ya habia aparecido en el bloque binario. Parametrizados sobre
+  la lista completa de kernels, la mutacion pasa de 58 a 75 fallos
+- `docs/native_backend.md` documenta la receta de mutacion y como simular la
+  ausencia del nativo. Ese segundo detalle tiene su propia trampa: el modulo
+  falso tiene que lanzar `ModuleNotFoundError` y no `ImportError`, porque desde
+  pytest 8.2 `importorskip` solo trata el primero como dependencia ausente
+- `vpx_reconstruct` sale de la lista de pendientes. Medido, su bucle geodesico
+  ya esta dominado por la dilatacion nativa: 0.0766 s contra 28.16 s en Python
+  puro sobre 256x256, un 368x que salio gratis por composicion
+- **fuera de alcance**: `vpx_skeletonize` y `vpx_thin` siguen en Python, y son
+  ahora lo unico pesado que queda. No escalan con los pixeles sino con pixeles
+  por iteraciones: 0.63 s en 128x128, 5.10 s en 256x256, 43.37 s en 512x512
+
+### Motor binario
+
+**Spike: backend opcional en Rust para erosion y dilatacion binaria.**
+
+`vpx_erode` y `vpx_dilate` pueden ejecutarse en Rust, con resultados identicos
+bit a bit a los del bucle de Python. Las ocho operaciones compuestas
+(`open`, `close`, `gradient`, `tophat`, `blackhat`, `boundary`, `hitmiss`,
+`reconstruct`) heredan la aceleracion sin cambios, porque ya estaban escritas
+como composicion explicita de esas dos. Medido: **376x en `vpx_erode` 3x3 sobre
+256x256**, 478x en `vpx_open` con dos iteraciones.
+
+Ningun simbolo publico nuevo, ninguna firma cambiada, ningun mensaje de error
+distinto. Sin el nativo instalado, el paquete se comporta exactamente igual que
+antes.
+
+- nuevo `vispyx/_backend.py`: modulo hoja, sin dependencias del paquete, que
+  resuelve el motor una sola vez al importar. `VISPYX_BACKEND` acepta `auto`
+  (default), `python` y `rust`; cualquier otro valor lanza `ValueError`
+- `apply_binary_operation` toma un parametro nuevo `native_op`. Cuando el
+  backend nativo esta activo y la operacion lo declara, delega el recorrido.
+  La rama va **despues** de las tres validaciones: el nativo nunca ve una
+  entrada sin normalizar y nunca lanza los mensajes de error, que siguen siendo
+  contrato publico de Python
+- nueva distribucion `vispyx-native` en `native/` (PyO3 + maturin), separada a
+  proposito: `pip install vispyx` no debe necesitar un compilador. Declarada
+  como extra `vispyx[fast]`, pendiente de publicar en PyPI
+- nuevo `test/test_backend_parity.py`, 231 tests, mas 13 en `test_cli_main.py`
+  para las flags nuevas. Corre la misma entrada por los
+  dos backends y exige igualdad exacta de valores y dtype. A diferencia de
+  `test_reference_scipy.py`, que rodea cada imagen con un marco de fondo para
+  evitar el borde, este lo toca a proposito: foreground pegado al margen, un
+  pixel en la esquina, kernels mas grandes que la imagen, ejes de longitud 1 y
+  vistas no contiguas. Se salta solo si el nativo no esta instalado, e incluye
+  un test que verifica que el backend bajo prueba **es** el nativo
+- la suite completa pasa en los dos modos: 669 tests con nativo, 438 sin el
+- **la paridad esta verificada por mutacion**. Cambiando a proposito el reflejo
+  por repeticion de borde en el Rust, ninguno de los 438 tests preexistentes
+  falla: un kernel solido no distingue las dos cosas, porque en la columna 0 el
+  reflejo muestrea `{img[1], img[0], img[1]}` y la repeticion
+  `{img[0], img[0], img[1]}`, que como conjunto son iguales. Solo discrimina un
+  soporte que excluya el centro y sea asimetrico, y por eso la lista de kernels
+  incluye `[[1,0,1]]`, `[[1,0,0]]`, `[[1],[0],[0]]` y un 3x3 con solo la esquina
+  activa. Con esos, la misma mutacion cae en 69 tests en vez de 15
+- **el CLI aprende a hablar del backend**, que antes no tenia forma de saberse
+  desde la linea de comandos:
+  - `vispyx --version` imprime `vispyx 0.5.0 (backend: rust, vispyx-native
+    0.1.0)`. Es lo unico que responde "que motor tengo" sin correr una operacion
+  - `--backend {auto,python,rust}` elige el motor para esa invocacion, con
+    prioridad sobre `VISPYX_BACKEND`. Pedir `rust` sin el paquete instalado
+    **falla con salida 2** en vez de caer a Python en silencio: recibir un motor
+    distinto del pedido invalida cualquier medicion
+  - `--time` reporta cuanto tardo la operacion y con que motor
+  - `--compare` corre los dos, mide, y verifica que el resultado coincida.
+    Sirve mas que cronometrar dos invocaciones desde la shell porque deja el
+    arranque del interprete fuera de la medicion: es cerca de un segundo, y en
+    imagenes chicas tapa por completo la diferencia. Si los dos motores
+    divergen sale con codigo 1, porque eso es un bug del paquete y no un error
+    de uso
+- la cadena de despacho de `main()` sale a `_dispatch()`. Era la unica forma de
+  cronometrarla y de correrla dos veces sobre backends distintos
+- la resolucion del backend pasa a ser perezosa. Hacerla al importar convertia
+  un `VISPYX_BACKEND` mal escrito en un fallo de `import vispyx`
+- nuevo `docs/native_backend.md`; `native/bench.py` reproduce las mediciones
+- **fuera de alcance por ahora**: las 7 `gray_*`, `vpx_skeletonize` y `vpx_thin`
+  siguen 100% en Python
+
 ## 0.4.0
 
 **El CLI queda completo y el paquete deja de filtrar excepciones ajenas.**

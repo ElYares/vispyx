@@ -1,0 +1,650 @@
+"""Paridad entre el motor de Python y el backend opcional en Rust.
+
+`vispyx` implementa la morfología desde cero en Python. `vispyx-native` recorre
+el mismo algoritmo en Rust. Estos tests exigen que coincidan **exactamente**:
+mismo valor en cada píxel y mismo dtype. El Python es el oráculo, igual que
+`morph_scipy.MorphologicalProcessor` lo es en `test_reference_scipy.py`.
+
+La diferencia con aquel archivo es deliberada: allá cada imagen va rodeada de un
+marco de fondo para que la operación nunca alcance el borde, porque scipy y
+vispyx tratan el exterior distinto. Acá pasa lo contrario. El borde es
+justamente donde el port se rompe, así que estas pruebas lo tocan a propósito:
+imágenes con foreground pegado al margen, y kernels más grandes que la imagen,
+donde el reflejo de `np.pad` se pliega más de una vez.
+"""
+
+import os
+import sys
+
+import numpy as np
+import pytest
+
+# Con VISPYX_BACKEND=rust el nativo es obligatorio, y este archivo tambien: un
+# skip aqui dejaria la suite en verde sin haber tocado Rust. Es lo que usa el
+# job con nativo del CI.
+if os.environ.get("VISPYX_BACKEND", "").strip().lower() == "rust":
+    import vispyx_native  # noqa: F401
+else:
+    pytest.importorskip(
+        "vispyx_native",
+        reason="the Rust backend is optional; install it from native/",
+    )
+
+from vispyx import _backend
+from vispyx import (
+    gray_blackhat,
+    gray_close,
+    gray_dilate,
+    gray_erode,
+    gray_gradient,
+    gray_open,
+    gray_tophat,
+    kernel_cross,
+    kernel_diamond,
+    kernel_disk,
+    kernel_square,
+    vpx_boundary,
+    vpx_close,
+    vpx_dilate,
+    vpx_erode,
+    vpx_gradient,
+    vpx_hitmiss,
+    vpx_open,
+    vpx_reconstruct,
+    vpx_skeletonize,
+    vpx_thin,
+    vpx_tophat,
+)
+
+# Las cuatro formas coinciden entre sí en radios chicos, así que el tamaño 7 es
+# el primero que separa cruz, diamante y disco de verdad.
+#
+# Los cuatro últimos no son decoración. Un kernel **sólido** no distingue el
+# reflejo de la repetición de borde: en la columna 0, el reflejo muestrea
+# `{img[1], img[0], img[1]}` y la repetición `{img[0], img[0], img[1]}`, que
+# como conjunto son el mismo, y `min`/`max` no ven la diferencia. Lo mismo pasa
+# con cruz, diamante y disco: son simétricos y contienen el centro.
+#
+# Para que el borde discrimine de verdad hace falta un soporte que **excluya el
+# centro** y sea asimétrico. Verificado por mutación: cambiar el reflejo por
+# `clamp` en el Rust deja pasar todos los kernels sólidos y solo cae en estos.
+KERNELS = (
+    None,
+    kernel_square(3),
+    kernel_cross(7),
+    kernel_diamond(7),
+    kernel_disk(3),
+    np.ones((7, 3), dtype=np.uint8),
+    np.array([[1, 0, 1]], dtype=np.uint8),
+    np.array([[1, 0, 0]], dtype=np.uint8),
+    np.array([[1], [0], [0]], dtype=np.uint8),
+    np.array([[1, 0, 0], [0, 0, 0], [0, 0, 0]], dtype=np.uint8),
+)
+
+KERNEL_IDS = (
+    "default",
+    "square3",
+    "cross7",
+    "diamond7",
+    "disk3",
+    "tall7x3",
+    "hueco-row1x3",
+    "solo-izquierda",
+    "solo-arriba",
+    "solo-esquina-nw",
+)
+
+ELEMENTWISE_OPERATIONS = (vpx_erode, vpx_dilate)
+COMPOSED_OPERATIONS = (vpx_open, vpx_close, vpx_gradient, vpx_tophat, vpx_boundary)
+
+GRAYSCALE_OPERATIONS = (
+    gray_erode,
+    gray_dilate,
+    gray_open,
+    gray_close,
+    gray_gradient,
+    gray_tophat,
+    gray_blackhat,
+)
+
+# Los ocho que el motor nativo despacha. `int64` importa mas de lo que parece:
+# es el dtype por defecto de `np.array([[1, 2]])` en Linux.
+NATIVE_DTYPES = (
+    np.uint8,
+    np.int8,
+    np.uint16,
+    np.int16,
+    np.uint32,
+    np.int32,
+    np.uint64,
+    np.int64,
+)
+
+
+def both_backends(operation, *args, **kwargs):
+    """Run one operation through each backend and return the two results."""
+    with _backend.override("python"):
+        expected = operation(*args, **kwargs)
+    with _backend.override("rust"):
+        actual = operation(*args, **kwargs)
+    return expected, actual
+
+
+def assert_identical(expected, actual):
+    """The two backends must agree on values and on dtype."""
+    assert actual.dtype == expected.dtype
+    assert np.array_equal(actual, expected)
+
+
+def noise(shape, seed, density=0.5):
+    """Random binary image with foreground reaching the borders."""
+    rng = np.random.default_rng(seed)
+    return ((rng.random(shape) > 1 - density).astype(np.uint8)) * 255
+
+
+def test_the_backend_under_test_is_actually_the_native_one():
+    """Guard against a green suite that never exercised Rust at all."""
+    with _backend.override("rust"):
+        assert _backend.name() == "rust"
+        assert "erode" in _backend.native().supported_ops()
+
+
+@pytest.mark.parametrize("operation", ELEMENTWISE_OPERATIONS, ids=lambda op: op.__name__)
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+@pytest.mark.parametrize("iterations", (1, 2, 3))
+def test_erode_and_dilate_match_on_noise(operation, kernel, iterations):
+    image = noise((16, 13), seed=11)
+    assert_identical(*both_backends(operation, image, kernel, iterations))
+
+
+@pytest.mark.parametrize("operation", COMPOSED_OPERATIONS, ids=lambda op: op.__name__)
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+def test_composed_operations_match(operation, kernel):
+    image = noise((14, 14), seed=23)
+    assert_identical(*both_backends(operation, image, kernel, 2))
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ((1, 1), (1, 9), (9, 1), (2, 2), (3, 4), (5, 5)),
+    ids=("1x1", "1x9", "9x1", "2x2", "3x4", "5x5"),
+)
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+def test_kernels_larger_than_the_image_still_match(shape, kernel):
+    """A 7x7 kernel over a 2-pixel axis folds the reflection several times."""
+    image = noise(shape, seed=hash(shape) % 1000)
+    assert_identical(*both_backends(vpx_erode, image, kernel, 1))
+    assert_identical(*both_backends(vpx_dilate, image, kernel, 1))
+
+
+@pytest.mark.parametrize("density", (0.0, 0.05, 0.95, 1.0))
+def test_saturated_and_empty_images_match(density):
+    """All-background and all-foreground are the two fixed points."""
+    image = noise((12, 12), seed=41, density=density)
+    assert_identical(*both_backends(vpx_erode, image, kernel_cross(7), 2))
+    assert_identical(*both_backends(vpx_dilate, image, kernel_cross(7), 2))
+
+
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+def test_single_pixel_in_a_corner_matches(kernel):
+    """The corner is where reflection padding differs the most from zero-fill."""
+    image = np.zeros((9, 9), dtype=np.uint8)
+    image[0, 0] = 255
+    assert_identical(*both_backends(vpx_dilate, image, kernel, 1))
+    assert_identical(*both_backends(vpx_erode, image, kernel, 1))
+
+
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+@pytest.mark.parametrize("column", (0, 1, -2, -1))
+def test_every_border_column_matches(kernel, column):
+    """Una franja vertical pegada a cada borde, que es donde el padding manda.
+
+    Separado del ruido general a propósito: con una imagen aleatoria densa, un
+    error de borde se tapa solo porque el vecino también estaba encendido.
+    """
+    image = np.zeros((11, 11), dtype=np.uint8)
+    image[:, column] = 255
+    image[3, :] = 255
+    assert_identical(*both_backends(vpx_erode, image, kernel, 1))
+    assert_identical(*both_backends(vpx_dilate, image, kernel, 1))
+
+
+def test_hitmiss_matches():
+    image = noise((12, 12), seed=59)
+    kernel_hit = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8)
+    kernel_miss = np.array([[1, 0, 1], [0, 0, 0], [1, 0, 1]], dtype=np.uint8)
+    assert_identical(*both_backends(vpx_hitmiss, image, kernel_hit, kernel_miss))
+
+
+def test_reconstruct_matches():
+    """Reconstruction loops until convergence, so a drift of one pixel diverges."""
+    mask = noise((14, 14), seed=67, density=0.6)
+    marker = np.zeros_like(mask)
+    marker[mask > 0] = 0
+    seeds = np.argwhere(mask > 0)[:3]
+    for row, column in seeds:
+        marker[row, column] = 255
+    assert_identical(*both_backends(vpx_reconstruct, marker, mask))
+
+
+def test_non_contiguous_input_matches():
+    """A sliced view has strides the native side must not assume away."""
+    image = noise((20, 20), seed=71)[::2, ::2]
+    assert not image.flags["C_CONTIGUOUS"]
+    assert_identical(*both_backends(vpx_erode, image, kernel_square(3), 1))
+
+
+def test_validation_errors_still_come_from_python():
+    """Error messages are public contract and must not change per backend."""
+    with _backend.override("rust"):
+        with pytest.raises(ValueError, match="kernel dimensions must be odd"):
+            vpx_erode(noise((5, 5), seed=3), np.ones((2, 2), dtype=np.uint8))
+        with pytest.raises(ValueError, match="image must not be empty"):
+            vpx_erode(np.zeros((0, 0), dtype=np.uint8))
+        with pytest.raises(ValueError, match="iterations must be a positive integer"):
+            vpx_erode(noise((5, 5), seed=3), None, True)
+
+
+def test_override_restores_the_previous_backend():
+    before = _backend.name()
+    with _backend.override("python"):
+        assert _backend.name() == "python"
+    assert _backend.name() == before
+
+
+def test_unknown_backend_mode_is_rejected():
+    with pytest.raises(ValueError, match="VISPYX_BACKEND must be one of"):
+        with _backend.override("cuda"):
+            pass
+
+
+# --- motor grayscale ---
+
+
+def gray_noise(shape, seed, dtype=np.uint8):
+    """Imagen de grises con valores en todo el rango util del dtype."""
+    rng = np.random.default_rng(seed)
+    tope = min(200, int(np.iinfo(dtype).max))
+    return rng.integers(0, tope + 1, shape).astype(dtype)
+
+
+@pytest.mark.parametrize("operation", GRAYSCALE_OPERATIONS, ids=lambda op: op.__name__)
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+@pytest.mark.parametrize("iterations", (1, 2))
+def test_grayscale_operations_match(operation, kernel, iterations):
+    image = gray_noise((13, 11), seed=101)
+    assert_identical(*both_backends(operation, image, kernel, iterations))
+
+
+@pytest.mark.parametrize("dtype", NATIVE_DTYPES, ids=lambda d: np.dtype(d).name)
+def test_every_native_dtype_matches_and_is_preserved(dtype):
+    """El nativo despacha por dtype y tiene que devolver el mismo que recibio."""
+    image = gray_noise((9, 9), seed=103, dtype=dtype)
+    # Kernel con hueco: `kernel_cross(7)` es simetrico y no discrimina el borde.
+    kernel = np.array([[1, 0, 0]], dtype=np.uint8)
+    for operation in (gray_erode, gray_dilate, gray_open, gray_gradient):
+        expected, actual = both_backends(operation, image, kernel, 1)
+        assert_identical(expected, actual)
+        assert actual.dtype == np.dtype(dtype)
+
+
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+@pytest.mark.parametrize("column", (0, 1, -2, -1))
+def test_grayscale_border_columns_match(kernel, column):
+    """El borde es donde el padding manda, también en grises."""
+    image = np.zeros((11, 11), dtype=np.uint8)
+    image[:, column] = 200
+    image[4, :] = 120
+    assert_identical(*both_backends(gray_erode, image, kernel, 1))
+    assert_identical(*both_backends(gray_dilate, image, kernel, 1))
+
+
+@pytest.mark.parametrize(
+    "shape", ((1, 1), (1, 9), (9, 1), (2, 2)), ids=("1x1", "1x9", "9x1", "2x2")
+)
+@pytest.mark.parametrize("kernel", KERNELS, ids=KERNEL_IDS)
+def test_grayscale_kernels_larger_than_the_image_match(shape, kernel):
+    """Parametrizado sobre KERNELS y no sobre un diamante suelto.
+
+    Con `kernel_diamond(7)` solo, este test sobrevivia a la mutacion de padding:
+    un soporte simetrico que contiene el centro no distingue el reflejo de la
+    repeticion de borde. Los kernels con hueco de la lista si.
+    """
+    image = gray_noise(shape, seed=107)
+    assert_identical(*both_backends(gray_erode, image, kernel, 1))
+    assert_identical(*both_backends(gray_dilate, image, kernel, 1))
+
+
+@pytest.mark.parametrize("dtype", (np.float32, np.float64), ids=("float32", "float64"))
+def test_floats_never_reach_the_native_engine(dtype, monkeypatch):
+    """Los flotantes se quedan en Python a proposito.
+
+    ``Ord`` en Rust es un orden total y los flotantes no lo tienen; reproducir la
+    propagacion de ``NaN`` de ``np.min`` bit a bit no vale el riesgo. Se verifica
+    rompiendo el nativo: si el float lo tocara, esto explotaria.
+    """
+    image = (np.random.default_rng(109).random((7, 7)) * 100).astype(dtype)
+
+    with _backend.override("rust"):
+        backend = _backend.native()
+
+        def explota(*args, **kwargs):
+            raise AssertionError("un float llego al motor nativo")
+
+        monkeypatch.setattr(backend, "grayscale_op", explota)
+        resultado = gray_erode(image, kernel_square(3))
+
+    assert resultado.dtype == np.dtype(dtype)
+
+
+def test_nan_survives_the_python_fallback():
+    """El corolario de lo anterior: `np.min` propaga NaN, y eso se conserva."""
+    image = np.full((5, 5), 1.0, dtype=np.float32)
+    image[2, 2] = np.nan
+
+    with _backend.override("rust"):
+        resultado = gray_erode(image, kernel_square(3))
+
+    assert np.isnan(resultado[2, 2])
+
+
+def test_the_native_engine_declares_its_dtypes():
+    with _backend.override("rust"):
+        declarados = _backend.native().supported_grayscale_dtypes()
+    assert set(declarados) == {np.dtype(d).name for d in NATIVE_DTYPES}
+
+
+# --- Zhang-Suen ---
+#
+# El unico motor que no pasa por `sweep`: padding de ceros, dos subpasadas con
+# borrado diferido y el bucle de convergencia adentro de Rust. Los tres son
+# lugares donde un port se equivoca sin que una imagen chica lo delate, por eso
+# las figuras gruesas: un esqueleto de ruido converge en dos o tres pasadas y no
+# ejercita el orden entre subpasadas.
+
+
+def thick_shapes():
+    """Figuras que necesitan muchas pasadas y llegan al borde de la imagen."""
+    image = np.zeros((24, 31), dtype=np.uint8)
+    image[2:10, 3:28] = 255
+    image[:, 13:19] = 255
+    yy, xx = np.mgrid[:24, :31]
+    image[(yy - 17) ** 2 + (xx - 7) ** 2 <= 30] = 255
+    return image
+
+
+def test_the_native_engine_declares_zhang_suen():
+    with _backend.override("rust"):
+        assert "zhang_suen" in _backend.native().supported_ops()
+
+
+@pytest.mark.parametrize("max_iterations", (None, 1, 2, 3, 5, 50))
+@pytest.mark.parametrize("density", (0.3, 0.6, 0.9))
+def test_skeletonize_matches_on_noise(max_iterations, density):
+    image = noise((19, 17), seed=113, density=density)
+    assert_identical(*both_backends(vpx_skeletonize, image, max_iterations))
+
+
+@pytest.mark.parametrize("max_iterations", (None, 1, 2, 3, 4, 6))
+def test_skeletonize_matches_on_thick_shapes(max_iterations):
+    """Cada corte intermedio compara el estado a mitad de camino, no solo el final."""
+    assert_identical(*both_backends(vpx_skeletonize, thick_shapes(), max_iterations))
+
+
+@pytest.mark.parametrize("iterations", (1, 2, 4))
+def test_thin_matches(iterations):
+    assert_identical(*both_backends(vpx_thin, thick_shapes(), iterations))
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ((1, 1), (1, 9), (9, 1), (2, 2), (3, 3), (3, 4)),
+    ids=("1x1", "1x9", "9x1", "2x2", "3x3", "3x4"),
+)
+@pytest.mark.parametrize("density", (0.5, 1.0))
+def test_skeletonize_matches_on_tiny_images(shape, density):
+    """Imagenes donde casi todo pixel toca el borde de ceros."""
+    image = noise(shape, seed=127, density=density)
+    assert_identical(*both_backends(vpx_skeletonize, image))
+
+
+@pytest.mark.parametrize("side", ("top", "bottom", "left", "right"))
+def test_skeletonize_matches_against_each_border(side):
+    """Una banda gruesa pegada a un lado: ahi el relleno de ceros decide."""
+    image = np.zeros((15, 15), dtype=np.uint8)
+    band = {
+        "top": np.s_[:5, :],
+        "bottom": np.s_[-5:, :],
+        "left": np.s_[:, :5],
+        "right": np.s_[:, -5:],
+    }[side]
+    image[band] = 255
+    image[7, 2:13] = 255
+    assert_identical(*both_backends(vpx_skeletonize, image))
+
+
+def test_skeletonize_non_contiguous_input_matches():
+    image = thick_shapes()[::-1, ::2]
+    assert not image.flags["C_CONTIGUOUS"]
+    assert_identical(*both_backends(vpx_skeletonize, image))
+
+
+def test_skeletonize_falls_back_on_an_old_native_build(monkeypatch):
+    """Un vispyx-native sin Zhang-Suen no debe romper `vpx_skeletonize`."""
+    image = thick_shapes()
+    with _backend.override("python"):
+        expected = vpx_skeletonize(image)
+
+    with _backend.override("rust"):
+        backend = _backend.native()
+        monkeypatch.setattr(backend, "supported_ops", lambda: ["erode", "dilate"])
+
+        def explota(*args, **kwargs):
+            raise AssertionError("un build sin zhang_suen no deberia llamarlo")
+
+        monkeypatch.setattr(backend, "zhang_suen", explota)
+        actual = vpx_skeletonize(image)
+
+    assert_identical(expected, actual)
+
+
+def test_skeletonize_validation_errors_still_come_from_python():
+    with _backend.override("rust"):
+        with pytest.raises(ValueError, match="image must not be empty"):
+            vpx_skeletonize(np.zeros((0, 3), dtype=np.uint8))
+        with pytest.raises(ValueError, match="iterations must be a positive integer"):
+            vpx_skeletonize(thick_shapes(), max_iterations=0)
+
+
+# --- van Herk / Gil-Werman: kernels rectangulares solidos ---
+#
+# El nativo desvia los kernels todo-unos a una ruta separable: una pasada por
+# filas y otra por columnas, con costo independiente del tamano. Solo desde
+# cierto tamano (25 celdas en grises, 49 en binario), asi que cada kernel de
+# esta lista esta elegido para cruzar el umbral que le toca, con lados
+# distintos para que un eje traspuesto no pase desapercibido.
+#
+# Un kernel solido no distingue reflejo de repeticion de borde (ver KERNELS),
+# asi que aqui el borde no lo discrimina la forma: lo discrimina la comparacion
+# exacta contra el bucle de Python sobre imagenes con foreground en el margen.
+
+RECT_KERNELS_GRAY = ((5, 5), (9, 3), (3, 9), (1, 25), (25, 1), (7, 7), (15, 15), (31, 5))
+RECT_KERNELS_BINARY = ((7, 7), (9, 7), (7, 9), (1, 49), (49, 1), (15, 15), (31, 5))
+
+
+def _rect_id(shape):
+    return "{}x{}".format(*shape)
+
+
+@pytest.mark.parametrize("shape", RECT_KERNELS_GRAY, ids=_rect_id)
+@pytest.mark.parametrize("operation", (gray_erode, gray_dilate), ids=lambda op: op.__name__)
+@pytest.mark.parametrize("iterations", (1, 2))
+def test_solid_rect_grayscale_matches(shape, operation, iterations):
+    image = gray_noise((23, 19), seed=151, dtype=np.uint16)
+    kernel = np.ones(shape, dtype=np.uint8)
+    assert_identical(*both_backends(operation, image, kernel, iterations))
+
+
+@pytest.mark.parametrize("shape", RECT_KERNELS_BINARY, ids=_rect_id)
+@pytest.mark.parametrize("operation", (vpx_erode, vpx_dilate), ids=lambda op: op.__name__)
+@pytest.mark.parametrize("density", (0.3, 0.9))
+def test_solid_rect_binary_matches(shape, operation, density):
+    image = noise((23, 19), seed=157, density=density)
+    kernel = np.ones(shape, dtype=np.uint8)
+    assert_identical(*both_backends(operation, image, kernel, 2))
+
+
+@pytest.mark.parametrize(
+    "image_shape",
+    ((1, 1), (1, 9), (9, 1), (2, 2), (3, 4), (6, 5)),
+    ids=("1x1", "1x9", "9x1", "2x2", "3x4", "6x5"),
+)
+@pytest.mark.parametrize("shape", ((7, 7), (15, 15), (1, 49), (31, 5)), ids=_rect_id)
+def test_solid_rect_larger_than_the_image_matches(image_shape, shape):
+    """El reflejo se pliega varias veces, y van Herk lo aplica por separado en cada eje."""
+    kernel = np.ones(shape, dtype=np.uint8)
+    grises = gray_noise(image_shape, seed=163)
+    binaria = noise(image_shape, seed=167)
+    assert_identical(*both_backends(gray_erode, grises, kernel, 1))
+    assert_identical(*both_backends(gray_dilate, grises, kernel, 1))
+    assert_identical(*both_backends(vpx_erode, binaria, kernel, 1))
+    assert_identical(*both_backends(vpx_dilate, binaria, kernel, 1))
+
+
+@pytest.mark.parametrize("column", (0, 1, 2, -3, -2, -1))
+@pytest.mark.parametrize("shape", ((7, 7), (9, 7), (1, 49)), ids=_rect_id)
+def test_solid_rect_border_stripes_match(column, shape):
+    """Una franja pegada a cada borde y una fila, en grises con valores distintos."""
+    image = np.zeros((17, 17), dtype=np.uint8)
+    image[:, column] = 200
+    image[5, :] = 90
+    image[0, 3] = 250
+    kernel = np.ones(shape, dtype=np.uint8)
+    assert_identical(*both_backends(gray_erode, image, kernel, 1))
+    assert_identical(*both_backends(gray_dilate, image, kernel, 1))
+    assert_identical(*both_backends(vpx_dilate, image, kernel.T, 1))
+
+
+@pytest.mark.parametrize("operation", COMPOSED_OPERATIONS[:2] + GRAYSCALE_OPERATIONS[2:4],
+                         ids=lambda op: op.__name__)
+def test_solid_rect_composed_operations_match(operation):
+    """Las compuestas heredan la ruta; open/close encadenan erosion y dilatacion."""
+    if operation.__name__.startswith("gray_"):
+        image = gray_noise((20, 22), seed=173)
+    else:
+        image = noise((20, 22), seed=173, density=0.7)
+    assert_identical(*both_backends(operation, image, np.ones((7, 9), dtype=np.uint8), 2))
+
+# --- el GIL se libera durante el calculo ---
+#
+# Sin `py.detach`, una llamada nativa retiene el GIL de principio a fin y ningun
+# otro hilo de Python avanza mientras dura. Estos tests miden justo eso: cuanto
+# avanza el hilo principal mientras el nativo trabaja en otro hilo.
+
+
+def _disco(lado):
+    yy, xx = np.mgrid[:lado, :lado]
+    radio = lado * 0.45
+    return (((yy - lado / 2) ** 2 + (xx - lado / 2) ** 2) < radio**2).astype(np.uint8) * 255
+
+
+def _vueltas_mientras_corre(operacion):
+    """Cuenta vueltas de un bucle Python mientras ``operacion`` corre en otro hilo.
+
+    El hilo avisa justo antes de entrar al nativo. Si el GIL no se suelta, el
+    hilo principal no vuelve a correr hasta que la llamada termina, y el
+    contador se queda en un punado de vueltas.
+    """
+    import threading
+
+    empezo = threading.Event()
+    termino = threading.Event()
+
+    def trabajo():
+        empezo.set()
+        operacion()
+        termino.set()
+
+    # Al volver del nativo, Python le cede el GIL al hilo principal por un
+    # intervalo completo (5 ms por defecto) antes de que `termino.set()` corra.
+    # Esa cola daba ~80 000 vueltas aun sin soltar el GIL. Con el intervalo en
+    # 10 us la cola desaparece y solo cuenta lo que pasa durante la llamada.
+    intervalo = sys.getswitchinterval()
+    sys.setswitchinterval(1e-5)
+    hilo = threading.Thread(target=trabajo)
+    try:
+        with _backend.override("rust"):
+            hilo.start()
+            empezo.wait()
+            vueltas = 0
+            while not termino.is_set():
+                vueltas += 1
+            hilo.join()
+    finally:
+        sys.setswitchinterval(intervalo)
+    return vueltas
+
+
+def _gil_cases():
+    """Llamadas directas al nativo, con la entrada ya preparada.
+
+    Directas y no por `vpx_erode` a proposito: la primera version construia la
+    imagen y validaba dentro de la operacion, el hilo principal avanzaba durante
+    ese trabajo de Python, y el test sobrevivia a quitar `py.detach` del todo.
+    """
+    nativo = _backend.native()
+    binaria = (noise((1024, 1024), seed=131) > 0).astype(np.uint8)
+    grises = gray_noise((1024, 1024), seed=137)
+    disco = (_disco(640) > 0).astype(np.uint8)
+    kernel = kernel_square(3)
+    return {
+        "binary_op": lambda: nativo.binary_op(binaria, kernel, 20, "erode"),
+        "grayscale_op": lambda: nativo.grayscale_op(grises, kernel, 20, "erode"),
+        "zhang_suen": lambda: nativo.zhang_suen(disco, None),
+        # Un kernel solido grande va por van Herk, que es otra rama dentro del
+        # mismo closure: tambien tiene que correr sin el GIL.
+        "binary_op-van-herk": lambda: nativo.binary_op(binaria, np.ones((15, 15), np.uint8), 20, "erode"),
+        "grayscale_op-van-herk": lambda: nativo.grayscale_op(grises, np.ones((15, 15), np.uint8), 20, "erode"),
+    }
+
+
+GIL_CASE_IDS = (
+    "binary_op",
+    "grayscale_op",
+    "zhang_suen",
+    "binary_op-van-herk",
+    "grayscale_op-van-herk",
+)
+
+
+@pytest.mark.parametrize("caso", GIL_CASE_IDS)
+def test_other_python_threads_run_during_a_native_call(caso):
+    """Medido en esta maquina: sin `py.detach`, menos de 4 000 vueltas; con el,
+    mas de 900 000. El umbral queda a 25x de lo primero y 9x de lo segundo."""
+    with _backend.override("rust"):
+        operacion = _gil_cases()[caso]
+    assert _vueltas_mientras_corre(operacion) > 100_000
+
+
+def test_threads_give_the_same_results_as_serial():
+    """Soltar el GIL no puede cambiar ni un pixel, ni mezclar imagenes."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    imagenes = [noise((64, 57), seed=200 + i) for i in range(8)]
+    grises = [gray_noise((64, 57), seed=300 + i, dtype=np.uint16) for i in range(8)]
+
+    def las_tres(indice):
+        return (
+            vpx_erode(imagenes[indice], kernel_cross(7), 2),
+            gray_dilate(grises[indice], np.array([[1, 0, 0]], dtype=np.uint8), 2),
+            vpx_skeletonize(imagenes[indice]),
+        )
+
+    with _backend.override("rust"):
+        en_serie = [las_tres(i) for i in range(8)]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            en_hilos = list(pool.map(las_tres, range(8)))
+
+    for serie, hilos in zip(en_serie, en_hilos):
+        for esperado, obtenido in zip(serie, hilos):
+            assert_identical(esperado, obtenido)

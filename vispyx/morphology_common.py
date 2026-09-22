@@ -4,6 +4,8 @@ import numbers
 
 import numpy as np
 
+from vispyx import _backend
+
 
 def validate_binary_image(image):
     """Validate and normalize the input image to a binary uint8 array."""
@@ -77,11 +79,24 @@ def pad_image(image, kernel):
     return np.pad(image, ((ph, ph), (pw, pw)), mode="reflect")
 
 
-def apply_binary_operation(image, kernel, iterations, reducer):
-    """Apply a per-window binary morphological reduction."""
+def apply_binary_operation(image, kernel, iterations, reducer, native_op=None):
+    """Apply a per-window binary morphological reduction.
+
+    ``native_op`` nombra la operación equivalente del backend opcional en Rust.
+    Cuando ese backend está activo y la operación es una de las que implementa,
+    el recorrido se delega; el resultado es idéntico bit a bit al del bucle de
+    abajo, que sigue siendo la implementación de referencia. Las validaciones
+    ya corrieron: el nativo nunca ve una entrada sin normalizar y nunca lanza
+    los mensajes de error, que son contrato público de este módulo.
+    """
     img = validate_binary_image(image)
     validate_iterations(iterations)
     kernel = validate_kernel(kernel)
+
+    if native_op is not None:
+        backend = _backend.native()
+        if backend is not None:
+            return backend.binary_op(img, kernel, int(iterations), native_op) * 255
 
     kh, kw = kernel.shape
     active_mask = kernel == 1
@@ -102,12 +117,30 @@ def apply_binary_operation(image, kernel, iterations, reducer):
     return img * 255
 
 
-def apply_grayscale_operation(image, kernel, iterations, reducer):
-    """Apply a per-window grayscale morphological reduction."""
+# El motor nativo solo cubre enteros. ``Ord`` en Rust es un orden total; los
+# flotantes no lo tienen, y reproducir la propagacion de ``NaN`` de ``np.min``
+# bit a bit no vale el riesgo. Un float cae al bucle de abajo sin avisar, que es
+# el comportamiento correcto: mismo resultado, solo mas lento.
+_NATIVE_GRAYSCALE_KINDS = ("i", "u")
+
+
+def apply_grayscale_operation(image, kernel, iterations, reducer, native_op=None):
+    """Apply a per-window grayscale morphological reduction.
+
+    Gemelo de ``apply_binary_operation``: ``native_op`` nombra la operacion
+    equivalente del backend opcional en Rust, y la delegacion va despues de las
+    validaciones para que el nativo nunca vea una entrada sin normalizar.
+    """
     source = validate_grayscale_image(image)
     img = source.copy()
     validate_iterations(iterations)
     kernel = validate_kernel(kernel)
+
+    if native_op is not None and img.dtype.kind in _NATIVE_GRAYSCALE_KINDS:
+        backend = _backend.native()
+        if backend is not None:
+            resultado = backend.grayscale_op(img, kernel, int(iterations), native_op)
+            return resultado.astype(source.dtype, copy=False)
 
     kh, kw = kernel.shape
     active_mask = kernel == 1

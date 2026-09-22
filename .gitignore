@@ -10,6 +10,10 @@ __pycache__/
 dist/
 build/
 
+# Rust backend build artifacts
+native/target/
+*.so
+
 # Virtual env and local env files
 .env
 .venv/

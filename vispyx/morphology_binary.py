@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from vispyx import _backend
 from vispyx.morphology_common import (
     apply_binary_operation,
     validate_binary_image,
@@ -18,6 +19,7 @@ def vpx_erode(image, kernel=None, iterations=1):
         kernel,
         iterations,
         reducer=lambda region, active_count: int(np.sum(region) == active_count),
+        native_op="erode",
     )
 
 
@@ -28,6 +30,7 @@ def vpx_dilate(image, kernel=None, iterations=1):
         kernel,
         iterations,
         reducer=lambda region, _active_count: int(np.any(region)),
+        native_op="dilate",
     )
 
 
@@ -125,6 +128,13 @@ def vpx_skeletonize(image, max_iterations=None):
 
     if max_iterations is not None:
         validate_iterations(max_iterations)
+
+    # Un build viejo de vispyx-native puede no traer Zhang-Suen: se pregunta en
+    # vez de asumir, y sin él se cae al bucle de abajo, que es la referencia.
+    backend = _backend.native()
+    if backend is not None and "zhang_suen" in backend.supported_ops():
+        limit = None if max_iterations is None else int(max_iterations)
+        return backend.zhang_suen(img, limit) * 255
 
     current = img.copy()
     iterations = 0

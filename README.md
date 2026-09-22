@@ -23,7 +23,7 @@
 
 ## Estado del Proyecto
 
-Versión actual: `0.4.0`  
+Versión actual: `0.5.0`  
 Estado: `alpha`  
 Enfoque actual: consolidación del core morfológico, API pública y empaquetado.
 

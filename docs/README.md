@@ -1,6 +1,6 @@
 # Documentación de vispyx
 
-Índice de la documentación interna. `vispyx` `0.4.0`.
+Índice de la documentación interna. `vispyx` `0.5.0`.
 
 ## Para usar el paquete
 
@@ -23,6 +23,7 @@
 |---|---|
 | [architecture.md](./architecture.md) | Capas, decisiones de diseño, deuda técnica, cómo agregar una operación |
 | [testing.md](./testing.md) | Qué fija la suite, qué no cubre, dónde poner el siguiente test |
+| [native_backend.md](./native_backend.md) | El backend opcional en Rust: qué acelera, cómo se engancha, cómo se valida |
 
 ## Por dónde empezar
 

@@ -24,7 +24,10 @@ modificar el paquete, no para quien lo usa.
                 validaciones + motor de ventana
 ```
 
-Regla de dependencias: `morphology_common` no importa a nadie del paquete. Los
+Regla de dependencias: `morphology_common` importa un solo módulo del paquete,
+`_backend`, que a su vez no importa nada de `vispyx` y por eso no puede cerrar
+un ciclo. `_backend` decide si la operación la ejecuta el bucle de Python o el
+backend opcional en Rust; ver [native_backend.md](./native_backend.md). Los
 dos módulos de morfología importan solo de `common`. `morphology.py` no importa
 lógica, solo reagrupa. El CLI importa de la fachada.
 
@@ -49,7 +52,7 @@ Contiene todo lo que se repite, y por eso concentra el riesgo:
 | `validate_kernel` | 2D, no vacío, dims impares, ≥1 celda activa; normaliza a 0/1 |
 | `validate_hitmiss_kernels` | dos kernels válidos, misma forma, sin solape |
 | `pad_image` | `np.pad(mode="reflect")` con grosor `kh//2 × kw//2` |
-| `apply_binary_operation` | motor de ventana deslizante binario |
+| `apply_binary_operation` | motor de ventana deslizante binario (con ruta nativa opcional) |
 | `apply_grayscale_operation` | motor de ventana deslizante grayscale |
 
 Los dos motores son idénticos salvo en tres puntos: el binario binariza la
