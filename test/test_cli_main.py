@@ -269,16 +269,19 @@ def test_hitmiss_ignora_las_flags_de_kernel(imagen_con_esquinas, tmp_path, monke
 def test_show_llama_al_unico_show_image_del_paquete(imagen, monkeypatch):
     """``--show`` era el unico camino del CLI sin cubrir.
 
-    No se puede ejercitar de verdad: `cli.py` fuerza el backend `TkAgg` al
-    importar y hace falta display. Lo que si se puede fijar es que despache al
-    `show_image` de `utils.py` — antes `cli.py` tenia **su propia copia**, que
-    la cobertura mostraba con cero ejecuciones.
+    No se puede ejercitar de verdad: hace falta display. Lo que si se puede
+    fijar es que cambie a un backend interactivo y despache al `show_image` de
+    `utils.py` — antes `cli.py` tenia **su propia copia**, que la cobertura
+    mostraba con cero ejecuciones.
     """
     llamadas = []
+    backends = []
     monkeypatch.setattr(cli, "show_image", lambda img, **kw: llamadas.append((img, kw)))
+    monkeypatch.setattr(cli.matplotlib, "use", backends.append)
 
     _correr(monkeypatch, ["vpx_erode", imagen, "--show"])
 
+    assert backends == ["TkAgg"]
     assert len(llamadas) == 1
     img, kw = llamadas[0]
     assert kw == {"title": "vpx_erode", "figsize": (8, 6)}
@@ -793,6 +796,62 @@ def test_compare_denuncia_una_divergencia_y_sale_con_codigo_1(
     assert "resultados identicos: NO, 16 pixeles distintos" in capturado.out
     assert "los dos backends divergieron" in capturado.err
 
+
+# --- sin display ---
+
+
+def test_show_sin_display_sale_con_codigo_2(imagen, monkeypatch, capsys):
+    """Sin display, `matplotlib.use("TkAgg")` lanza ImportError."""
+
+    def sin_display(nombre):
+        raise ImportError("Cannot load backend 'TkAgg' ... 'headless' is currently running")
+
+    monkeypatch.setattr(cli.matplotlib, "use", sin_display)
+    monkeypatch.setattr(cli, "show_image", lambda img, **kw: None)
+
+    with pytest.raises(SystemExit) as salida:
+        _correr(monkeypatch, ["vpx_erode", imagen, "--show"])
+
+    assert salida.value.code == 2
+    assert "--show necesita un display" in capsys.readouterr().err
+
+
+def test_sin_show_el_cli_no_toca_el_backend_de_matplotlib(imagen, tmp_path, monkeypatch):
+    backends = []
+    monkeypatch.setattr(cli.matplotlib, "use", backends.append)
+
+    _correr(monkeypatch, ["vpx_erode", imagen, "-o", str(tmp_path / "salida.pgm")])
+
+    assert backends == []
+
+
+def test_el_cli_corre_en_una_maquina_sin_display(imagen, tmp_path):
+    """El bug que encontro el primer run del CI.
+
+    `cli.py` forzaba TkAgg al importarse, y sin display eso lanza ImportError:
+    el comando moria al arrancar aunque solo se quisiera guardar con `-o`. Un
+    proceso aparte sin DISPLAY ni WAYLAND_DISPLAY lo reproduce en cualquier
+    maquina, tenga pantalla o no.
+    """
+    import os
+    import subprocess
+
+    entorno = {
+        clave: valor
+        for clave, valor in os.environ.items()
+        if clave not in ("DISPLAY", "WAYLAND_DISPLAY", "MPLBACKEND")
+    }
+    salida = str(tmp_path / "salida.pgm")
+    proceso = subprocess.run(
+        [sys.executable, "-c", "import sys; from vispyx.cli import main; sys.argv = sys.argv[1:]; main()",
+         "vispyx", "vpx_erode", imagen, "-o", salida],
+        capture_output=True,
+        text=True,
+        env=entorno,
+        timeout=60,
+    )
+    assert proceso.returncode == 0, proceso.stderr
+    assert cv2.imread(salida, cv2.IMREAD_GRAYSCALE) is not None
 
 # --- errores de dominio sin traceback ---
 

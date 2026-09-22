@@ -65,8 +65,44 @@ cd native && maturin develop --release
 
 Requiere `cargo` y `rustc`. Vive en una distribución aparte (`vispyx-native`)
 por exactamente ese motivo: **`pip install vispyx` nunca debe necesitar un
-compilador**. El extra declarado en `pyproject.toml` es `vispyx[fast]`, pendiente
-de publicación en PyPI.
+compilador**. El extra declarado en `pyproject.toml` es `vispyx[fast]`. Funciona
+en cuanto `vispyx-native` esté publicado en PyPI; el CI ya construye los wheels,
+ver [Releases](#releases).
+
+## CI
+
+`.github/workflows/ci.yml` corre en cada push y cada PR:
+
+| Job | Qué verifica |
+|---|---|
+| `test-python` | la suite **sin** el nativo, en Python 3.9 y 3.13. Antes comprueba que `vispyx_native` no sea importable, para que el job no pruebe sin querer lo mismo que el siguiente |
+| `test-native` | `cargo fmt --check`, `cargo clippy -D warnings`, y la suite dos veces con el nativo instalado: `VISPYX_BACKEND=rust` y `VISPYX_BACKEND=python` |
+| `wheels` | wheels de `vispyx-native` para Linux x86_64 (manylinux), macOS universal2 y Windows x86_64, Python 3.9 a 3.13. Cada uno se instala con `--no-index` y se importa desde fuera del repo: si necesitara compilador, fallaría ahí |
+| `sdist` | la distribución de fuentes |
+| `publish` | solo con un tag `native-v*`, ver abajo |
+
+Con `VISPYX_BACKEND=rust`, `test_backend_parity.py` **no puede saltarse**:
+importa `vispyx_native` directo en vez de usar `importorskip`, y si falta la
+colección falla. Sin eso, un nativo que no se instaló bien dejaría la suite en
+verde sin haber tocado Rust. Verificado con la receta de
+[simular la ausencia del nativo](#simular-la-ausencia-del-nativo): en `auto` el
+archivo se salta, en `rust` da error.
+
+## Releases
+
+1. Subir `version` en `native/Cargo.toml` y `native/pyproject.toml`.
+2. Commit, y un tag con la misma versión: `git tag native-v0.2.0`.
+3. `git push origin native-v0.2.0`.
+
+El job `publish` espera a que pasen los otros cuatro, verifica que el tag
+coincida con la versión del crate y sube wheels y sdist con **trusted
+publishing** (OIDC): no hay tokens en el repo ni en los secrets.
+
+**Requisito de una sola vez**, fuera del repo: en pypi.org, registrar este
+workflow como *trusted publisher* del proyecto `vispyx-native` (repositorio
+`ElYares/vispyx`, workflow `ci.yml`, environment `pypi`), y crear el
+environment `pypi` en GitHub. Hasta entonces el job `publish` falla al
+autenticarse, y es lo esperado.
 
 ## Cómo se elige
 
@@ -360,11 +396,9 @@ bug del paquete.
 
 En orden de rendimiento por esfuerzo:
 
-1. **CI con wheels.** El repo no tiene `.github/` todavía. Sin eso
-   `vispyx-native` no se puede publicar y `pip install vispyx[fast]` sigue sin
-   funcionar: el extra está declarado pero apunta a un paquete que no existe en
-   PyPI. Hace falta una matriz de `maturin-action` y correr la suite con
-   `VISPYX_BACKEND` en `python` y `rust`.
+1. **Publicar el primer release** de `vispyx-native`. El CI ya construye y sabe
+   publicar (ver [Releases](#releases)); falta registrar el trusted publisher
+   en pypi.org y empujar el primer tag.
 2. **van Herk / Gil-Werman** para kernels grandes, donde el speedup actual baja
    a 8x. Haría el costo independiente del tamaño del kernel.
 3. **Flotantes en el motor grayscale**, si aparece la necesidad. Requiere

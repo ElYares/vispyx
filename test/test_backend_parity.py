@@ -13,15 +13,22 @@ imágenes con foreground pegado al margen, y kernels más grandes que la imagen,
 donde el reflejo de `np.pad` se pliega más de una vez.
 """
 
+import os
 import sys
 
 import numpy as np
 import pytest
 
-pytest.importorskip(
-    "vispyx_native",
-    reason="the Rust backend is optional; install it from native/",
-)
+# Con VISPYX_BACKEND=rust el nativo es obligatorio, y este archivo tambien: un
+# skip aqui dejaria la suite en verde sin haber tocado Rust. Es lo que usa el
+# job con nativo del CI.
+if os.environ.get("VISPYX_BACKEND", "").strip().lower() == "rust":
+    import vispyx_native  # noqa: F401
+else:
+    pytest.importorskip(
+        "vispyx_native",
+        reason="the Rust backend is optional; install it from native/",
+    )
 
 from vispyx import _backend
 from vispyx import (
