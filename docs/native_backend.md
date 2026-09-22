@@ -156,6 +156,26 @@ no necesitaron una sola línea: ya estaban escritas como composición explícita
 erosión y dilatación, y heredaron la aceleración completa. Es el dividendo de
 que ni `morphology_binary.py` ni `morphology_grayscale.py` repitieran el motor.
 
+### Hilos: el nativo suelta el GIL
+
+Las tres funciones nativas sueltan el GIL durante el cálculo (`py.detach`). Solo
+lo retienen para copiar la entrada fuera de NumPy y para construir el arreglo de
+salida. Varias imágenes procesadas en hilos corren de verdad en paralelo:
+
+```text
+hilos (rust)          imagenes      serie      hilos   speedup
+--------------------------------------------------------------
+vpx_erode 3x3 x10       4x1024    0.1406s    0.0489s      2.9x
+```
+
+Sin soltarlo, la misma medición da **1.1x**: los hilos se turnan el GIL y
+corren uno detrás de otro. Reproducible con `python native/bench.py`, que
+termina con esta tabla.
+
+No hay paralelismo **dentro** de una operación: una sola imagen sigue usando
+un solo núcleo. Para un dataset basta un `ThreadPoolExecutor`; no hace falta
+multiprocessing ni copiar imágenes entre procesos.
+
 ### Por qué los flotantes se quedan en Python
 
 `Ord` en Rust es un orden total, y los flotantes no lo tienen. Reproducir bit a
@@ -241,7 +261,7 @@ después del de convergencia, igual que en Python. `vpx_thin` es
 
 ## Qué garantiza la paridad
 
-`test/test_backend_parity.py` — 616 tests que corren la misma entrada por los
+`test/test_backend_parity.py` — 622 tests que corren la misma entrada por los
 dos backends y exigen igualdad exacta de valores y de dtype. Más 13 en
 `test_cli_main.py` para las tres flags nuevas, incluida la rama de divergencia,
 que se alcanza reemplazando el despacho.
@@ -265,6 +285,18 @@ mutaciones que mueren **dentro** de van Herk:
 | pasada por filas con el alto del kernel en vez del ancho | 61 |
 | combinar sufijo con sufijo en vez de sufijo con prefijo | 44 |
 | reflejo por `clamp`, en filas o en columnas | 0 — equivalente, ver arriba |
+
+Seis más fijan el GIL: cinco miden cuánto avanza el hilo principal mientras
+una llamada nativa corre en otro hilo —una por función, y dos más para la rama
+de van Herk—, y uno exige que 8
+imágenes en hilos den lo mismo que en serie. El primer intento de los tres
+**sobrevivió a quitar `py.detach`**: construía la imagen dentro de la operación,
+y el hilo principal avanzaba durante ese trabajo de Python. Arreglado eso,
+quedaba una cola de ~80 000 vueltas: al volver del nativo, Python le cede el GIL
+al hilo principal un intervalo completo (5 ms) antes de que el trabajador avise
+que terminó. Con `sys.setswitchinterval(1e-5)` la cola desaparece: sin soltar el
+GIL son menos de 4 000 vueltas, soltándolo más de 900 000, y el umbral está en
+100 000.
 
 Zhang-Suen suma 47: ruido en tres densidades, figuras gruesas cortadas en
 varios `max_iterations` —para comparar el estado a mitad de camino y no solo el
@@ -369,11 +401,7 @@ En orden de rendimiento por esfuerzo:
    funcionar: el extra está declarado pero apunta a un paquete que no existe en
    PyPI. Hace falta una matriz de `maturin-action` y correr la suite con
    `VISPYX_BACKEND` en `python` y `rust`.
-2. **Liberar el GIL** en `binary_op`, `grayscale_op` y `zhang_suen`, para que el nativo no
-   bloquee otros hilos durante la pasada.
-3. **van Herk / Gil-Werman** para kernels grandes, donde el speedup actual baja
-   a 8x. Haría el costo independiente del tamaño del kernel.
-4. **Flotantes en el motor grayscale**, si aparece la necesidad. Requiere
+2. **Flotantes en el motor grayscale**, si aparece la necesidad. Requiere
    decidir y fijar por test la semántica de `NaN`.
 
 `vpx_reconstruct` **ya no está en la lista**: medido, el bucle geodésico está

@@ -22,6 +22,26 @@ El 31x31 tarda 2.2 ms. Resultados identicos bit a bit.
   hueco de los tests
 - 106 tests de paridad nuevos; cinco mutaciones reales de van Herk, todas mueren
 
+### El backend nativo suelta el GIL
+
+**Varias imagenes en hilos corren en paralelo: 2.9x con 4 hilos**, contra 1.1x
+antes. `binary_op`, `grayscale_op` y `zhang_suen` sueltan el GIL durante el
+calculo con `py.detach`; solo lo retienen para copiar la entrada fuera de NumPy
+y construir la salida. Resultados identicos, en serie o en hilos.
+
+- para un dataset basta un `ThreadPoolExecutor`: sin multiprocessing ni copiar
+  imagenes entre procesos. Una sola imagen sigue usando un solo nucleo
+- 4 tests nuevos. Tres miden cuanto avanza el hilo principal mientras el nativo
+  corre en otro hilo, uno por funcion; el cuarto exige que 8 imagenes en hilos
+  den lo mismo que en serie
+- **el primer intento de esos tests sobrevivio a quitar `py.detach`**:
+  construian la imagen dentro de la operacion y el hilo principal avanzaba
+  durante ese trabajo de Python. Corregido eso quedaba una cola de ~80 000
+  vueltas, el intervalo de 5 ms que Python le cede al hilo principal al volver
+  del nativo. Con `sys.setswitchinterval(1e-5)` desaparece: sin soltar el GIL,
+  menos de 4 000 vueltas; soltandolo, mas de 900 000
+- `native/bench.py` termina con la medicion de hilos
+
 ### Zhang-Suen
 
 **`vpx_skeletonize` y `vpx_thin` corren en Rust: las 19 operaciones aceleradas.**

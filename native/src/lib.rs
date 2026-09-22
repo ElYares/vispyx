@@ -16,6 +16,10 @@
 //!
 //! Zhang-Suen ([`zhang_suen`]) is the exception to point 1: it pads with zeros,
 //! on purpose, exactly like `vpx_skeletonize`.
+//!
+//! Every entry point releases the GIL for the heavy loop (`py.detach`), so
+//! several threads can run native operations at once. Only copying the input
+//! out of NumPy and building the output array hold it.
 
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
@@ -347,24 +351,31 @@ fn binary_op<'py>(
     // `.iter()` walks in logical row-major order whatever the memory layout is,
     // so a sliced or transposed view lands here correctly.
     let mut current: Vec<u8> = image.iter().copied().collect();
-    let mut next = vec![0u8; current.len()];
+    // `solid_rect` lee la vista de NumPy, asi que se decide antes de soltar el
+    // GIL; al closure solo entra la tupla.
     let rect = solid_rect(&kernel).filter(|&(kh, kw)| kh * kw >= VAN_HERK_MIN_CELLS_BINARY);
 
-    for _ in 0..iterations {
-        match rect {
-            Some((kh, kw)) => van_herk_rect(&current, height, width, kh, kw, op, &mut next),
-            None => sweep(
-                &current,
-                height as isize,
-                width as isize,
-                &offsets,
-                radius,
-                op,
-                &mut next,
-            ),
+    // El GIL se suelta solo durante el calculo: leer la entrada y construir el
+    // arreglo de salida tocan objetos de Python y necesitan tenerlo.
+    let current = py.detach(move || {
+        let mut next = vec![0u8; current.len()];
+        for _ in 0..iterations {
+            match rect {
+                Some((kh, kw)) => van_herk_rect(&current, height, width, kh, kw, op, &mut next),
+                None => sweep(
+                    &current,
+                    height as isize,
+                    width as isize,
+                    &offsets,
+                    radius,
+                    op,
+                    &mut next,
+                ),
+            }
+            std::mem::swap(&mut current, &mut next);
         }
-        std::mem::swap(&mut current, &mut next);
-    }
+        current
+    });
 
     let result = numpy::ndarray::Array2::from_shape_vec((height, width), current)
         .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -380,7 +391,7 @@ fn run_grayscale<'py, T>(
     op: Op,
 ) -> PyResult<Bound<'py, PyAny>>
 where
-    T: numpy::Element + Copy + Ord + Default,
+    T: numpy::Element + Copy + Ord + Default + Send,
 {
     let image = image.as_array();
     let kernel = kernel.as_array();
@@ -389,24 +400,27 @@ where
     let (offsets, radius) = active_offsets(&kernel);
 
     let mut current: Vec<T> = image.iter().copied().collect();
-    let mut next = current.clone();
     let rect = solid_rect(&kernel).filter(|&(kh, kw)| kh * kw >= VAN_HERK_MIN_CELLS_GRAY);
 
-    for _ in 0..iterations {
-        match rect {
-            Some((kh, kw)) => van_herk_rect(&current, height, width, kh, kw, op, &mut next),
-            None => sweep_gray(
-                &current,
-                height as isize,
-                width as isize,
-                &offsets,
-                radius,
-                op,
-                &mut next,
-            ),
+    let current = py.detach(move || {
+        let mut next = current.clone();
+        for _ in 0..iterations {
+            match rect {
+                Some((kh, kw)) => van_herk_rect(&current, height, width, kh, kw, op, &mut next),
+                None => sweep_gray(
+                    &current,
+                    height as isize,
+                    width as isize,
+                    &offsets,
+                    radius,
+                    op,
+                    &mut next,
+                ),
+            }
+            std::mem::swap(&mut current, &mut next);
         }
-        std::mem::swap(&mut current, &mut next);
-    }
+        current
+    });
 
     let result = numpy::ndarray::Array2::from_shape_vec((height, width), current)
         .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -539,27 +553,30 @@ fn zhang_suen<'py>(
         grid[(i + 1) * stride + j + 1] = value;
     }
 
-    let mut to_remove = Vec::new();
-    let mut iterations = 0usize;
+    let grid = py.detach(move || {
+        let mut to_remove = Vec::new();
+        let mut iterations = 0usize;
 
-    loop {
-        let mut changed = false;
-        for step in 0..2u8 {
-            if zhang_suen_subpass(&mut grid, height, width, step, &mut to_remove) {
-                changed = true;
+        loop {
+            let mut changed = false;
+            for step in 0..2u8 {
+                if zhang_suen_subpass(&mut grid, height, width, step, &mut to_remove) {
+                    changed = true;
+                }
             }
-        }
 
-        iterations += 1;
-        if !changed {
-            break;
-        }
-        if let Some(limit) = max_iterations {
-            if iterations >= limit {
+            iterations += 1;
+            if !changed {
                 break;
             }
+            if let Some(limit) = max_iterations {
+                if iterations >= limit {
+                    break;
+                }
+            }
         }
-    }
+        grid
+    });
 
     let mut result = Vec::with_capacity(height * width);
     for i in 1..=height {
