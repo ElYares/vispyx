@@ -151,7 +151,7 @@ que cambia es el tiempo. Ver [native_backend.md](./native_backend.md).
 
 ```bash
 $ vispyx --version
-vispyx 0.4.0 (backend: rust, vispyx-native 0.1.0)
+vispyx 0.5.0 (backend: rust, vispyx-native 0.1.0)
 ```
 
 Sin el paquete opcional instalado dice `(backend: python)`. Es la única forma de

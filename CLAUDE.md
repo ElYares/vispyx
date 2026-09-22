@@ -1,7 +1,9 @@
 # vispyx
 
 Paquete Python de procesamiento de imágenes con un núcleo de morfología
-matemática **implementado desde cero**. Versión `0.4.0`, estado alpha.
+matemática **implementado desde cero**. Versión `0.5.0`, estado alpha. Trae un
+backend opcional en Rust (`native/`, distribución aparte `vispyx-native`) que
+acelera las 19 operaciones con resultados idénticos bit a bit.
 
 ## Regla que manda sobre todo
 
@@ -15,6 +17,7 @@ erosionar, dilatar ni esqueletizar. Si una tarea parece pedir
 
 ```text
 vispyx/
+├── _backend.py              elige el motor: VISPYX_BACKEND=auto|python|rust
 ├── morphology_common.py     validaciones + los dos motores de ventana deslizante
 ├── morphology_binary.py     12 operaciones vpx_* (0/255)
 ├── morphology_grayscale.py  7 operaciones gray_* (dtype nativo)
@@ -24,18 +27,29 @@ vispyx/
 ├── segmentation.py          segment_otsu (skimage)
 ├── utils.py                 read_grayscale, show_image
 ├── cli.py                   comando `vispyx`, 21 métodos
+├── __main__.py              `python -m vispyx`
 └── __init__.py              superficie pública, 28 símbolos
+native/src/lib.rs            el backend en Rust: 3 funciones, sin validación
+.github/workflows/ci.yml     suite en los dos motores, wheels, publicación
 ```
 
 `morphology_common.py` es el corazón: tocarlo cambia las 19 operaciones a la vez.
+Los bucles de Python son la **implementación de referencia**: el Rust tiene que
+coincidir con ellos bit a bit, y `test/test_backend_parity.py` lo exige.
 
 ## Comandos
 
 ```bash
-pip install -e .[dev]
-pytest -q            # 137 tests, ~1.4 s
+VIRTUAL_ENV=.venv uv pip install -e '.[dev]'    # el .venv es de uv, no trae pip
+cd native && maturin develop --release && cd ..  # el nativo, opcional
+pytest -q            # 1079 con el nativo; sin él, 436 pasan y 6 se saltan
+VISPYX_BACKEND=python pytest -q                  # la referencia, con el nativo puesto
 vispyx --help
+python native/bench.py                           # Python contra Rust
 ```
+
+Después de tocar `native/src/lib.rs` hay que recompilar: los tests corren contra
+el `.so` instalado, no contra el fuente.
 
 ## Convenciones no negociables
 
@@ -49,7 +63,11 @@ vispyx --help
 - **Padding por reflejo** en todo, salvo Zhang-Suen (`vpx_skeletonize`/
   `vpx_thin`), que usa ceros a propósito.
 - **Los bucles Python no se vectorizan.** La lentitud es el precio explícito de
-  que el algoritmo sea legible.
+  que el algoritmo sea legible. La velocidad viene del backend en Rust, que no
+  valida ni lanza mensajes: todo error sale de Python, antes de llegar al nativo.
+- **Todo error de entrada del CLI sale con código 2** y una línea en stderr.
+  `ValueError`/`FileNotFoundError` se convierten con `parser.error`; cualquier
+  otra excepción es un bug y sale con traceback, a propósito.
 
 ## Agregar una operación
 
@@ -82,7 +100,16 @@ despacho con `_run_binary_method` o `_run_grayscale_method`, y
 - `iterations=n` en `open`/`close` significa *n erosiones y luego n
   dilataciones*, no *n aperturas*
 - `vispyx.__version__` está clavado en un test: subir la versión sin actualizar
-  `test_public_api.py` rompe la suite
+  `test_public_api.py` rompe la suite. La versión aparece en ~12 archivos:
+  `grep -rn "0\.5\.0"` antes de subirla
+- **Antes de creerle a un test de paridad, mutar el Rust** y ver que muera. Un
+  kernel sólido no distingue reflejo de repetición de borde: los tests de borde
+  necesitan kernels con hueco. Y como las dos rutas dan lo mismo, un test de
+  paridad no sabe qué ruta corrió (por ejemplo, van Herk o `sweep`)
+- Con `VISPYX_BACKEND=rust`, `test_backend_parity.py` **falla** si el nativo no
+  está instalado, en vez de saltarse. Es lo que usa el CI
+- `cli.py` cambia matplotlib a TkAgg **solo con `--show`**. Forzarlo al importar
+  rompía el comando entero en una máquina sin display
 - `morph_scipy.py` (raíz) está fuera del paquete instalable, pero
   `test/test_reference_scipy.py` lo usa como oráculo de referencia. El
   `conftest.py` de la raíz existe solo para que ese import funcione

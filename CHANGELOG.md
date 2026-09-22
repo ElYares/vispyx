@@ -1,6 +1,29 @@
 # Changelog
 
-## No publicado
+## 0.5.0
+
+**Un backend opcional en Rust acelera las 19 operaciones, identico bit a bit, y
+el repo tiene CI por primera vez.**
+
+`vispyx-native`, una distribucion aparte en `native/`, corre las operaciones en
+Rust: 469x en `vpx_erode` 3x3, 146x en `gray_erode` 15x15 gracias a van Herk,
+774x en `vpx_skeletonize`. Suelta el GIL, asi que varias imagenes en hilos
+corren en paralelo. Los bucles de Python siguen siendo la referencia: 622 tests
+de paridad exigen el mismo valor y el mismo dtype en cada pixel, y se
+verificaron rompiendo el Rust a proposito. `pip install vispyx` sigue sin
+necesitar compilador; el nativo se elige con `VISPYX_BACKEND` o `--backend`.
+
+Dos bugs de antes, encontrados en el camino: `--grid 0` mataba el proceso con
+SIGFPE dentro de OpenCV, y el CLI no arrancaba en una maquina sin display.
+
+Un cambio de contrato en el CLI: los errores de entrada salen con codigo 2 y una
+linea en stderr, en vez de un traceback. La API de Python no cambia: ningun
+simbolo nuevo, ningun mensaje de error distinto.
+
+Suite de 425 a 1079 tests con el nativo instalado; 436 pasan y 6 se saltan sin
+el. `vispyx-native` queda en `0.1.0`, listo para publicarse con un tag
+`native-v0.1.0` en cuanto se registre el trusted publisher en PyPI.
+
 
 ### van Herk / Gil-Werman para kernels rectangulares
 
@@ -199,7 +222,7 @@ antes.
   activa. Con esos, la misma mutacion cae en 69 tests en vez de 15
 - **el CLI aprende a hablar del backend**, que antes no tenia forma de saberse
   desde la linea de comandos:
-  - `vispyx --version` imprime `vispyx 0.4.0 (backend: rust, vispyx-native
+  - `vispyx --version` imprime `vispyx 0.5.0 (backend: rust, vispyx-native
     0.1.0)`. Es lo unico que responde "que motor tengo" sin correr una operacion
   - `--backend {auto,python,rust}` elige el motor para esa invocacion, con
     prioridad sobre `VISPYX_BACKEND`. Pedir `rust` sin el paquete instalado

@@ -1,6 +1,6 @@
 # API Reference
 
-Referencia de la API pública de `vispyx` (`0.4.0`). Todo lo listado aquí se
+Referencia de la API pública de `vispyx` (`0.5.0`). Todo lo listado aquí se
 importa directamente desde el paquete raíz:
 
 ```python

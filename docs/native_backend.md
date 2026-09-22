@@ -150,7 +150,7 @@ donde el usuario puede hacer algo al respecto.
 
 ```bash
 $ vispyx --version
-vispyx 0.4.0 (backend: rust, vispyx-native 0.1.0)
+vispyx 0.5.0 (backend: rust, vispyx-native 0.1.0)
 ```
 
 `--backend {auto,python,rust}` elige el motor para esa invocación y tiene

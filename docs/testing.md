@@ -9,11 +9,12 @@ pip install -e .[dev]
 pytest -q
 ```
 
-Estado verificado: **433 pasan y 6 se saltan, ~4.0 s** sin el backend nativo, y
-**901 tests, ~3.0 s** con él instalado (los 131 de paridad se suman, y el resto
-de la suite corre más rápido). La suite pasa entera en los dos modos:
+Estado verificado en 0.5.0: **436 pasan y 6 se saltan, ~6 s** sin el backend
+nativo, y **1079 tests, ~10 s** con él instalado (se suman los 622 de paridad y
+los del CLI que miden `--backend`). La suite pasa entera en los dos modos:
 `VISPYX_BACKEND=python pytest -q` y `VISPYX_BACKEND=rust pytest -q`; ver
-[native_backend.md](./native_backend.md). (Python 3.13.13, numpy
+[native_backend.md](./native_backend.md). El CI corre las tres combinaciones
+en cada push: sin nativo, y con nativo en los dos motores. (Python 3.13.13, numpy
 2.5.2, OpenCV 5.0, scikit-image 0.26, matplotlib 3.11, pytest 9.1,
 scipy 1.18).
 
@@ -31,7 +32,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | Archivo | Tests | Qué fija |
 |---|---|---|
 | `test_invariants.py` | 193 | las leyes de la morfología como propiedad general |
-| `test_cli_main.py` | 90 | el parser: flags, patrones, guardado y códigos de salida, incluidas `--backend`, `--time` y `--compare`, y que un error de dominio salga con código 2 sin traceback |
+| `test_cli_main.py` | 93 | el parser: flags, patrones, guardado y códigos de salida, incluidas `--backend`, `--time` y `--compare`, que un error de dominio salga con código 2 sin traceback, y que el CLI corra sin display |
 | `test_edge_cases.py` | 35 | entradas degeneradas y los caminos que nadie recorría |
 | `test_segmentation.py` | 8 | `segment_otsu`: el umbral, el puente y su validación |
 | `test_morphology.py` | 47 | el núcleo algorítmico, binario y grayscale |
@@ -41,7 +42,7 @@ esas dependencias **ningún** archivo de test llega siquiera a colectarse.
 | `test_kernels.py` | 6 | forma exacta de los cuatro generadores |
 | `test_cli.py` | 3 | las tres `run_*` que no encajan en el molde, con I/O real |
 | `test_preprocessing.py` | 25 | qué hace `apply_clahe`, sus parámetros y su validación, incluida la grilla |
-| `test_backend_parity.py` | 510 | paridad exacta entre los dos motores, binario, grayscale y Zhang-Suen, incluidos los ocho dtypes enteros; se salta si el nativo no está instalado |
+| `test_backend_parity.py` | 622 | paridad exacta entre los dos motores: binario, grayscale, Zhang-Suen y van Herk, los ocho dtypes enteros, y que el GIL se suelte; se salta si el nativo no está instalado, salvo con `VISPYX_BACKEND=rust`, donde falla |
 
 ## Qué se verifica de verdad
 
@@ -85,7 +86,7 @@ Lo que sí queda amarrado:
 - Toda entrada inválida produce `ValueError`, nunca `TypeError` ni `assert`.
 - `vispyx.morphology` debe seguir funcionando como import path: los tests del
   núcleo importan desde la fachada, no desde `morphology_binary`.
-- `vispyx.__version__ == "0.4.0"` está clavado en un test: **subir la versión
+- `vispyx.__version__ == "0.5.0"` está clavado en un test: **subir la versión
   rompe la suite si no se actualiza también ahí**.
 
 ## Lo que cubre `test_cli_main.py`
