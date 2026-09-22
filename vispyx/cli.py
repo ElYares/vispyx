@@ -40,9 +40,19 @@ from vispyx.preprocessing import apply_clahe
 from vispyx.segmentation import segment_otsu
 from vispyx.utils import read_grayscale, show_image
 
-# Va despues de importar `vispyx.utils`, que ya cargo `pyplot`: `matplotlib.use`
-# cambia el backend igual, y el CLI necesita uno interactivo para `--show`.
-matplotlib.use("TkAgg")  # Forzar backend seguro y visualizable
+
+def _use_interactive_backend(parser):
+    """Switch matplotlib to TkAgg, only when ``--show`` asks for a window.
+
+    Antes se forzaba al importar el modulo, y en una maquina sin display
+    ``matplotlib.use("TkAgg")`` lanza ImportError: el comando entero moria al
+    arrancar, aunque solo se quisiera guardar con ``-o``. Ahora el costo lo paga
+    solo quien pide una ventana, y sin display recibe un error de uso.
+    """
+    try:
+        matplotlib.use("TkAgg")
+    except ImportError as error:
+        parser.error(f"--show necesita un display: {error}")
 
 
 KERNEL_SHAPES = ["square", "cross", "diamond", "disk"]
@@ -427,6 +437,7 @@ def main():
         print(f"Imagen guardada en: {args.output}")
 
     if args.show:
+        _use_interactive_backend(parser)
         show_image(result, title=args.method, figsize=(8, 6))
 
     if not args.output:

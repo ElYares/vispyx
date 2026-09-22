@@ -22,6 +22,28 @@ El 31x31 tarda 2.2 ms. Resultados identicos bit a bit.
   hueco de los tests
 - 106 tests de paridad nuevos; cinco mutaciones reales de van Herk, todas mueren
 
+### CI y wheels de vispyx-native
+
+**El repo tiene CI por primera vez**, y `vispyx-native` ya se puede publicar.
+`.github/workflows/ci.yml` corre en cada push y PR:
+
+- la suite sin el nativo (Python 3.9 y 3.13), y con el nativo dos veces:
+  `VISPYX_BACKEND=rust` y `VISPYX_BACKEND=python`. Mas `cargo fmt --check` y
+  `cargo clippy -D warnings`
+- wheels para Linux x86_64, macOS universal2 y Windows x86_64, Python 3.9 a 3.13.
+  Cada wheel se instala con `--no-index` y se importa fuera del repo
+- publicacion en PyPI solo con un tag `native-v*`, con trusted publishing
+  (OIDC) y sin tokens. Verifica que el tag coincida con la version del crate.
+  Falta registrar el publisher en pypi.org: es una accion de la cuenta, fuera
+  del repo
+- **fix: el CLI no arrancaba en una maquina sin display**, aunque no se usara
+  `--show`. `cli.py` forzaba `matplotlib.use("TkAgg")` al importarse, y sin
+  display eso lanza `ImportError`. Lo encontro el primer run del CI. Ahora el
+  backend se cambia solo con `--show`, y sin display sale con codigo 2
+- con `VISPYX_BACKEND=rust`, `test_backend_parity.py` ya no puede saltarse: si
+  el nativo falta, la coleccion falla. Sin eso, un nativo mal instalado dejaba
+  la suite en verde sin tocar Rust
+
 ### El backend nativo suelta el GIL
 
 **Varias imagenes en hilos corren en paralelo: 2.9x con 4 hilos**, contra 1.1x
@@ -41,6 +63,28 @@ y construir la salida. Resultados identicos, en serie o en hilos.
   del nativo. Con `sys.setswitchinterval(1e-5)` desaparece: sin soltar el GIL,
   menos de 4 000 vueltas; soltandolo, mas de 900 000
 - `native/bench.py` termina con la medicion de hilos
+
+### CLI: errores de dominio sin traceback
+
+**Toda entrada invalida sale con codigo 2 y una linea en stderr.** Antes, solo
+los errores de `argparse` salian limpios: un `--iterations 0`, un
+`--kernel-size 4` o una ruta inexistente mostraban el traceback completo.
+
+- `main()` atrapa `ValueError` y `FileNotFoundError` alrededor del despacho y
+  los pasa a `parser.error`. El mensaje es exactamente el de la API de Python,
+  que sigue siendo contrato publico
+- cualquier otra excepcion sigue saliendo como traceback: es un bug, no una
+  entrada mal escrita, y esconderlo haria mas dificil reportarlo
+- `python -m vispyx` y `python -m vispyx.cli` ahora corren el CLI. El nombre del
+  programa esta fijo en `vispyx`, asi que el uso y los errores no dicen
+  `__main__.py`
+- **fix: `--grid 0` mataba el proceso.** OpenCV dividia por el tamano de la
+  celda y el proceso moria con SIGFPE y core dump, sin traceback ni mensaje.
+  `apply_clahe` valida ahora `tile_grid_size` y lanza
+  `tile_grid_size must be two positive integers`. La documentacion decia que
+  salia como `cv2.error`; no era cierto
+- los tests del CLI que esperaban `ValueError` desde `main()` pasan a esperar
+  codigo 2 con el mensaje literal en stderr. Suite de 948 a 964 tests
 
 ### Zhang-Suen
 

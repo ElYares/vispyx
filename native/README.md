@@ -17,13 +17,15 @@ bit a bit**. Si no está instalado, `vispyx` funciona igual, solo más lento.
 | las 8 binarias compuestas | nativo por composición |
 | las 5 `gray_*` compuestas | nativo por composición |
 | `gray_*` con dtype flotante | Python, a propósito: `Ord` no cubre `NaN` |
-| `vpx_skeletonize`, `vpx_thin` | Python |
+| `vpx_skeletonize`, `vpx_thin` | Rust, motor propio (Zhang-Suen) |
 
-17 de 19 operaciones, con cuatro funciones nativas.
+Las 19 operaciones, con cinco funciones nativas.
 
 ## Instalación
 
-Todavía no está publicado en PyPI, así que se instala desde este directorio:
+Todavía no está publicado en PyPI. El CI ya construye los wheels y sabe
+publicarlos con un tag `native-v*` (ver `docs/native_backend.md`, "Releases");
+mientras tanto se instala desde este directorio:
 
 ```bash
 pip install maturin
