@@ -2,6 +2,28 @@
 
 ## No publicado
 
+### CLI: errores de dominio sin traceback
+
+**Toda entrada invalida sale con codigo 2 y una linea en stderr.** Antes, solo
+los errores de `argparse` salian limpios: un `--iterations 0`, un
+`--kernel-size 4` o una ruta inexistente mostraban el traceback completo.
+
+- `main()` atrapa `ValueError` y `FileNotFoundError` alrededor del despacho y
+  los pasa a `parser.error`. El mensaje es exactamente el de la API de Python,
+  que sigue siendo contrato publico
+- cualquier otra excepcion sigue saliendo como traceback: es un bug, no una
+  entrada mal escrita, y esconderlo haria mas dificil reportarlo
+- `python -m vispyx` y `python -m vispyx.cli` ahora corren el CLI. El nombre del
+  programa esta fijo en `vispyx`, asi que el uso y los errores no dicen
+  `__main__.py`
+- **fix: `--grid 0` mataba el proceso.** OpenCV dividia por el tamano de la
+  celda y el proceso moria con SIGFPE y core dump, sin traceback ni mensaje.
+  `apply_clahe` valida ahora `tile_grid_size` y lanza
+  `tile_grid_size must be two positive integers`. La documentacion decia que
+  salia como `cv2.error`; no era cierto
+- los tests del CLI que esperaban `ValueError` desde `main()` pasan a esperar
+  codigo 2 con el mensaje literal en stderr. Suite de 948 a 964 tests
+
 ### Zhang-Suen
 
 **`vpx_skeletonize` y `vpx_thin` corren en Rust: las 19 operaciones aceleradas.**

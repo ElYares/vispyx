@@ -141,3 +141,23 @@ def test_apply_clahe_accepts_nested_lists():
     """
     with pytest.raises(ValueError, match="image must be uint8 or uint16"):
         apply_clahe([[0, 1], [1, 0]])
+
+
+@pytest.mark.parametrize(
+    "grid",
+    [(0, 0), (0, 8), (8, 0), (-1, -1), (8,), (8, 8, 8), (2.0, 2.0), (True, True), 8],
+    ids=["0x0", "0x8", "8x0", "negativa", "uno", "tres", "float", "bool", "escalar"],
+)
+def test_invalid_tile_grid_size_is_rejected(grid):
+    """Un cero en la grilla mataba el proceso con SIGFPE dentro de OpenCV."""
+    imagen = np.random.default_rng(0).integers(0, 256, (20, 20), dtype=np.uint8)
+    with pytest.raises(ValueError, match="tile_grid_size must be two positive integers"):
+        apply_clahe(imagen, tile_grid_size=grid)
+
+
+def test_numpy_integers_are_a_valid_tile_grid_size():
+    imagen = np.random.default_rng(0).integers(0, 256, (20, 20), dtype=np.uint8)
+    esperado = apply_clahe(imagen, tile_grid_size=(4, 4))
+    np.testing.assert_array_equal(
+        apply_clahe(imagen, tile_grid_size=(np.int64(4), np.int32(4))), esperado
+    )
