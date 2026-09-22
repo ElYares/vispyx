@@ -16,8 +16,8 @@ caso                    tamaño     python       rust   speedup
 vpx_erode   3x3  x1   256x256     0.3821s    0.0008s      469x
 vpx_open    3x3  x2   256x256     1.2005s    0.0023s      516x
 gray_erode  3x3  x1   256x256     0.2008s    0.0008s      242x
-gray_erode  7x7  x1   256x256     0.2025s    0.0051s       40x
-gray_erode 15x15 x1   256x256     0.2266s    0.0295s        8x
+gray_erode  7x7  x1   256x256     0.2259s    0.0015s      147x
+gray_erode 15x15 x1   256x256     0.2317s    0.0016s      146x
 gray_open   3x3  x1   256x256     0.4465s    0.0017s      261x
 vpx_skeletonize       256x256    11.2146s    0.0151s      744x
 vpx_skeletonize       512x512    87.8276s    0.1135s      774x
@@ -25,20 +25,40 @@ vpx_skeletonize       512x512    87.8276s    0.1135s      774x
 
 Reproducible con `python native/bench.py`.
 
-### El speedup cae con el tamaño del kernel, y no es un defecto
+### Kernels grandes: van Herk / Gil-Werman
 
 En Python el costo es **por píxel**: lo que domina es el overhead de numpy por
 ventana —`region[active_mask]`, `np.min`—, no las celdas. Medido, un
 `gray_erode` sobre 128×128 tarda lo mismo con kernel 3×3 (0.0564 s) que con
 15×15 (0.0549 s), aunque el segundo tenga 25 veces más celdas.
 
-En Rust se invierte: el costo pasa a ser proporcional a las celdas activas. De
-ahí que el mismo port dé 242x en 3×3 y 8x en 15×15. Ocho veces sigue siendo una
-mejora, pero conviene no vender el número del 3×3 como si fuera general.
+El `sweep` de Rust invierte eso: su costo es proporcional a las celdas activas,
+y por eso el primer port daba 242x en 3×3 pero solo 8x en 15×15.
 
-Es también la puerta al siguiente paso real para kernels grandes: una
-descomposición tipo van Herk / Gil-Werman haría el costo independiente del
-tamaño del kernel.
+Para los kernels **rectangulares sólidos** (todo unos, que es lo que da
+`kernel_square` y el default) el nativo usa van Herk / Gil-Werman: la erosión por
+un rectángulo es separable, primero el mínimo por filas y después por columnas,
+y cada pasada 1D cuesta tres comparaciones por píxel sin importar el ancho.
+Medido sobre 256×256: 3×3 tarda 1.1 ms, 15×15 tarda 1.6 ms y 31×31, 2.2 ms. El
+15×15 pasó de 29.5 ms a 1.6 ms.
+
+Dos umbrales deciden cuándo se usa, porque para kernels chicos el `sweep` gana:
+
+| Motor | van Herk desde | Por qué |
+|---|---|---|
+| grises | 25 celdas (5×5) | el `sweep` cuesta por celda; en 5×5 ya pierde, 2.70 ms contra 1.65 ms |
+| binario | 49 celdas (7×7) | el `sweep` binario corta en el primer 0 (erosión) o el primer 1 (dilatación). Sobre ruido gana siempre, hasta en 31×31 (1.3 ms contra 2.0 ms). Sobre una máscara realista pierde feo: un disco dilatado con 31×31 tarda **145 ms** por `sweep` y 2.2 ms por van Herk. Desde 7×7 van Herk gana en el disco, y su costo no depende de la imagen |
+
+Un kernel con cualquier cero —cruz, diamante, disco, los kernels con hueco—
+sigue por el `sweep`: no es separable en dos pasadas 1D.
+
+**Con un kernel sólido, el reflejo y la repetición de borde dan lo mismo.** Las
+filas reflejadas en el borde (1…p) ya están dentro de la ventana, así que como
+conjunto muestrean exactamente lo mismo que repetir la fila 0, y el mínimo y el
+máximo coinciden. Verificado sobre 3 000 casos aleatorios, incluidos kernels más
+grandes que la imagen: cero ventanas distintas. Por eso cambiar el reflejo por
+`clamp` dentro de van Herk **no rompe ningún test, ni puede**: es una mutación
+equivalente, no un hueco de cobertura.
 
 Un `vpx_open` con dos iteraciones sobre 512×512 pasa de unos 5 segundos a unos
 10 milisegundos. Ese es el punto: no es una optimización marginal, es la
@@ -277,7 +297,7 @@ después del de convergencia, igual que en Python. `vpx_thin` es
 
 ## Qué garantiza la paridad
 
-`test/test_backend_parity.py` — 514 tests que corren la misma entrada por los
+`test/test_backend_parity.py` — 622 tests que corren la misma entrada por los
 dos backends y exigen igualdad exacta de valores y de dtype. Más 13 en
 `test_cli_main.py` para las tres flags nuevas, incluida la rama de divergencia,
 que se alcanza reemplazando el despacho.
@@ -287,8 +307,24 @@ que el dtype se conserva, y dos tests sobre el camino que **no** se toma —
 que un flotante nunca llegue al nativo (se comprueba rompiéndolo: si lo tocara,
 explotaría) y que `NaN` siga propagándose por el bucle de Python.
 
-Cuatro más fijan el GIL: tres miden cuánto avanza el hilo principal mientras
-una llamada nativa corre en otro hilo —una por función—, y uno exige que 8
+van Herk suma 106: cada kernel rectangular está elegido para cruzar el umbral
+de su motor, con lados distintos (`9x3` y `3x9`, `1x49` y `49x1`) para que un eje
+traspuesto no pase, más kernels más grandes que la imagen, franjas en cada borde
+y las compuestas. Como las dos rutas dan el mismo resultado, un test de paridad
+no puede saber cuál corrió. Lo que prueba que van Herk se ejercita son las
+mutaciones que mueren **dentro** de van Herk:
+
+| Mutación | Fallos (de 106) |
+|---|---|
+| bloques del prefijo desplazados en uno | 106 |
+| el último bloque, incompleto, mal cerrado (dos variantes) | 101 |
+| pasada por filas con el alto del kernel en vez del ancho | 61 |
+| combinar sufijo con sufijo en vez de sufijo con prefijo | 44 |
+| reflejo por `clamp`, en filas o en columnas | 0 — equivalente, ver arriba |
+
+Seis más fijan el GIL: cinco miden cuánto avanza el hilo principal mientras
+una llamada nativa corre en otro hilo —una por función, y dos más para la rama
+de van Herk—, y uno exige que 8
 imágenes en hilos den lo mismo que en serie. El primer intento de los tres
 **sobrevivió a quitar `py.detach`**: construía la imagen dentro de la operación,
 y el hilo principal avanzaba durante ese trabajo de Python. Arreglado eso,
@@ -399,9 +435,7 @@ En orden de rendimiento por esfuerzo:
 1. **Publicar el primer release** de `vispyx-native`. El CI ya construye y sabe
    publicar (ver [Releases](#releases)); falta registrar el trusted publisher
    en pypi.org y empujar el primer tag.
-2. **van Herk / Gil-Werman** para kernels grandes, donde el speedup actual baja
-   a 8x. Haría el costo independiente del tamaño del kernel.
-3. **Flotantes en el motor grayscale**, si aparece la necesidad. Requiere
+2. **Flotantes en el motor grayscale**, si aparece la necesidad. Requiere
    decidir y fijar por test la semántica de `NaN`.
 
 `vpx_reconstruct` **ya no está en la lista**: medido, el bucle geodésico está
