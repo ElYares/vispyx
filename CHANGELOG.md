@@ -2,6 +2,26 @@
 
 ## No publicado
 
+### van Herk / Gil-Werman para kernels rectangulares
+
+**El costo de erosionar o dilatar ya no crece con el kernel.** Un `gray_erode`
+15x15 sobre 256x256 pasa de 29.5 ms a 1.6 ms: de 8x a **146x** contra Python.
+El 31x31 tarda 2.2 ms. Resultados identicos bit a bit.
+
+- los kernels rectangulares solidos (todo unos: `kernel_square` y el default)
+  van por una ruta separable, minimo por filas y despues por columnas, con tres
+  comparaciones por pixel por eje sin importar el tamano
+- dos umbrales, medidos: desde 5x5 en grises y desde 7x7 en binario. El binario
+  tiene salida temprana y sobre ruido el `sweep` gana siempre, pero sobre una
+  mascara realista no: un disco dilatado con 31x31 tarda 145 ms por `sweep` y
+  2.2 ms por van Herk
+- un kernel con cualquier cero sigue por el `sweep`
+- **con un kernel solido, reflejo y repeticion de borde dan lo mismo**: las filas
+  reflejadas ya estan dentro de la ventana. Verificado en 3 000 casos. Cambiar
+  el reflejo por `clamp` dentro de van Herk es una mutacion equivalente, no un
+  hueco de los tests
+- 106 tests de paridad nuevos; cinco mutaciones reales de van Herk, todas mueren
+
 ### Zhang-Suen
 
 **`vpx_skeletonize` y `vpx_thin` corren en Rust: las 19 operaciones aceleradas.**
